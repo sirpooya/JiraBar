@@ -1,0 +1,46 @@
+# .gitignore for an osx-* app. Merged from the repos; origins in the comments.
+# gitignore comments must sit on their own line: a trailing "# note" becomes part of the pattern.
+
+# macOS
+.DS_Store
+
+# Xcode build output and DerivedData. build/ and Build/ are the same folder on a
+# case-insensitive disk; both spellings appear in the packaging scripts.
+build/
+Build/
+DerivedData/
+.dd/
+dd/
+
+# Per-user Xcode state. Never commit.
+xcuserdata/
+*.xcuserstate
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# XcodeGen output: project.yml is the source of truth.
+*.xcodeproj
+
+# Release artifacts: uploaded to GitHub Releases, never committed
+*.dmg
+*.zip
+*.dSYM
+*.dSYM.zip
+
+# Sparkle EdDSA private key: lives in the login keychain, never in the tree
+*.pem
+sparkle_key*
+sparkle_private_key*
+exported_key*
+
+# Local-only Claude settings
+.claude/settings.local.json
+
+# mac-qc scratch directory, deleted at the end of every QC pass
+_qc/
+
+# Never commit a real PAT. Scratch files used while testing auth.
+*.token
+.env
