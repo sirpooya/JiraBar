@@ -21,11 +21,24 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
   so the artifact is `Ticketbar.app`.
 
 ## Status
-2026-09-08: v1 complete and running. Keychain token proven live against works.digikala.com
-(`/myself` returned the real display name). Board 95's columns load from the Agile API and the
-dropdown switches between them live. 54 unit tests green. Not yet proven: moving a real issue to
-Done, which needs permission because it writes to somebody's board.
+2026-09-08 (late): comments, comment authoring, emoji reactions and the detached window landed.
+The detail view is now title, optional metadata, optional description, then the comment thread
+newest first with the composer above it. Rows lost their one-click Done. 79 tests green.
+Still unproven: (1) emoji reactions, which use Jira's undocumented `/rest/internal/2` endpoint and
+have never been confirmed against works.digikala.com, (2) moving a real issue, which needs
+permission because it writes to somebody's board, (3) sleep and wake across a real overnight sleep.
+
+2026-09-08: v1 running. Keychain token proven live against works.digikala.com (`/myself` returned
+the real display name). Board 95's columns load from the Agile API and the dropdown switches
+between them live.
+
 2026-09-02: repo initialized, no Swift code yet.
+
+> **Another committer is active in this repo.** Two commits on 2026-09-08 were authored as
+> `Pooya <sirpooya@users.noreply.github.com>` with generic messages ("Refactor code structure for
+> improved readability and maintainability"), and they swept up uncommitted working-tree edits
+> mid-session. Probably an IDE auto-commit. Commit early if you are mid-change, and do not assume
+> the working tree is still yours.
 
 ## The Jira instance (ESTABLISHED, do not re-research)
 - Host `https://works.digikala.com`. Self-hosted **Server/DC**, so the API is `/rest/api/2`. Not
@@ -94,13 +107,38 @@ project.yml            XcodeGen spec, the source of truth
 CLAUDE.md              this file
 PLAN.md                phase order, check the boxes as they land
 Ticketbar/
-  App/                 AppDelegate, status item controller, icon drawing
-  Views/               popover, list, row, detail, error states, settings panes
-  Core/                no SwiftUI here: JiraClient, models, Keychain, poller, seen-set
+  App/                 AppKit. No Jira knowledge here.
+    TicketbarApp        @main, one MenuBarExtra that presents nothing so SwiftUI has a scene
+    AppDelegate         defaults, sleep/wake wiring, lifecycle returns
+    StatusItemController  status item, popover, detach, icon updates
+    StatusItemIcon      the two rendering modes and the urgency colours
+    DetachedWindow      the torn-off floating window (NSWindow, never NSPanel)
+    WindowActivation    .accessory to .regular, derived from the window list
+  Views/               SwiftUI
+    PopoverRootView     header with the column dropdown, the state switch, footer
+    IssueListView       inside PopoverRootView
+    IssueRowView        two lines: column, platform, due date, then title. Plus the pills.
+    IssueDetailView     title header, metadata, description, comment thread
+    CommentComposer     the editor, including pasted-image upload
+    DescriptionWebView  the one WKWebView wrapper and the one stylesheet
+    StateViews          needs-token, token-rejected, unreachable, empty, failed, loading
+    SettingsWindow / SettingsView / SettingsComponents
+  Core/                no SwiftUI and no AppKit imports
+    JiraClient          every network call. Nothing else touches URLSession.
+    JiraModels          issues, comments, reactions, transitions, date parsing, HTML escaping
+    BoardModels         Agile board, columns, the JQL a column produces
+    ContentState        the state machine that makes the failure split structural
+    JiraError           the error taxonomy and its two mappers
+    IssueStore          the one observable. Everything the views read.
+    Poller / SeenIssues / NotificationService / TokenStore / KeychainStore
+    Keys                every defaults key, registered at launch
+    Platform            Tech Area, field first then emoji fallback
+    QCHooks             forced states and fixtures. DEBUG only.
   Resources/           Assets.xcassets
   Info.plist
   Ticketbar.entitlements
-TicketbarTests/        unit tests, app is the TEST_HOST
+TicketbarTests/        CoreTests, StorageTests. The app is the TEST_HOST.
+_samples/              the visual spec
 ```
 Build: `xcodegen generate && xcodebuild -project Ticketbar.xcodeproj -scheme Ticketbar build`.
 Run: `open build/Ticketbar.app`. Quit the running app before repackaging: replacing the bundle
@@ -199,9 +237,28 @@ user stores leaves this Mac.
   this doc is ambiguous, the screenshot wins.
 - Screenshot-QC every significant component with `mac-qc` before calling it done. Measure, do not
   eyeball. `_qc/` is scratch and is deleted with `scripts/clean.sh` at the end of every pass.
-- QC hooks: launch flags that force a state on screen without touching the server, so the three
-  failure states and the empty state can all be screenshotted. Add them as they are needed and
-  list them here.
+- QC hooks, DEBUG only, in `QCHooks.swift`. They force a state on screen without touching the
+  server, which is the only way to photograph the failure states on demand:
+
+  ```
+  Ticketbar.app/Contents/MacOS/Ticketbar --qc-state=<value>
+  ```
+
+  | Value | Shows |
+  |---|---|
+  | `sample` | four fixture issues, the real board 95 column names in the dropdown |
+  | `detail` | the same, opened straight into the detail view with fixture comments, reactions and transitions |
+  | `empty` | the genuinely-no-issues state |
+  | `loading` | the first-load spinner |
+  | `needs-token` | onboarding |
+  | `token-rejected` | the 401 state |
+  | `unreachable` | the off-VPN state |
+  | `failed` | a generic server failure |
+
+  **A forced state draws a yellow SAMPLE DATA banner.** It has to: the fixtures render identically
+  to a live board, and a build left running with the flag was mistaken for the real thing.
+- `mac-qc` cannot click the status item unless the terminal host has Accessibility. Without it,
+  use `--qc-state` plus `macqc windows --all` and shoot the layer-25 window directly.
 
 ## Playground convention
 Dev-only tuning windows: an `@Observable` params object the shipping views read, a `Codable`
@@ -232,13 +289,17 @@ skill.
 ## Definition of done (v1)
 - [x] A PAT pasted once survives quit, relaunch and reboot, and lives only in the Keychain
 - [x] Badge count matches the Jira search result count
-- [x] The dropdown lists the board's real columns and switching one reloads the list
-- [ ] An issue newly arriving in the selected column produces exactly one notification, and
-      clicking it opens that issue
+- [x] The dropdown lists board 95's real columns and switching one reloads the list
 - [x] An expired token shows the token-expired state and never an empty list (screenshot)
 - [x] Off VPN shows the unreachable state and never an empty list (screenshot)
-- [ ] An issue can be moved to Done from the popover, confirmed in the browser (needs permission:
-      this writes to a real board)
-- [ ] The description renders readably in light and dark, tables and code blocks included
 - [x] Icon is legible in template and color mode, on light and dark menu bars
+- [x] Comments render newest first, at one size, with add, edit and reactions
+- [x] The panel detaches into a floating window and stays put
+- [ ] An issue newly arriving in the selected column produces exactly one notification, and
+      clicking it opens that issue
+- [ ] An issue can be moved from the popover, confirmed in the browser (needs permission: this
+      writes to a real board)
+- [ ] Emoji reactions actually work against works.digikala.com. The endpoint is undocumented and
+      has never been confirmed; a failure is silent by design, so the chips simply would not appear.
+- [ ] The description renders readably in light and dark, tables and code blocks included
 - [ ] Polling pauses across sleep and does not burst on wake

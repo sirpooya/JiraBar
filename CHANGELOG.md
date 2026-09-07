@@ -30,7 +30,7 @@ section when a release is cut.
 - One move control in the detail header instead of a Done button beside a separate Move menu
 - Comments are listed newest first, with the composer above the thread
 - Comment text renders at one size regardless of the inline sizes Jira stored, keeping bold, colour and structure
-- List rows show the column, platform and due date over the title, without the issue key
+- List rows show the issue key, platform and due date over the title
 - Rows no longer repeat the column's status: the pill shows only when a board column gathers more than one status
 
 ### Removed
