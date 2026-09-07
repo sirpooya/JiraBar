@@ -85,28 +85,45 @@ struct CommentComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(isEditing ? "Editing a comment" : "Add a comment")
+            // No "Add a comment" heading. The section is already titled Comments and an empty
+            // text box under it needs no label to explain itself.
+            if isEditing {
+                Text("Editing a comment")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                if store.isUploadingImage {
-                    HStack(spacing: 4) {
-                        ProgressView().controlSize(.small).scaleEffect(0.6)
-                        Text("Uploading image").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
             }
 
             CommentEditor(text: $store.commentDraft) { data in
                 Task { await store.attachPastedImage(data, to: issueKey) }
             }
-            .frame(height: 58)
+            // Half what it was: one line is the common case, and it grows by scrolling.
+            .frame(height: 29)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.primary.opacity(0.06)))
 
             HStack(spacing: 8) {
+                if store.isUploadingImage {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                    Text("Uploading image").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("Paste a screenshot to attach it")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 0)
+
+                if store.isSubmittingComment {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                }
+
+                if isEditing {
+                    Button("Cancel") { store.cancelCommentEdit() }
+                        .controlSize(.small)
+                }
+
+                // Trailing: the confirming action sits where the eye ends up.
                 Button(isEditing ? "Save" : "Comment") {
                     Task { await store.submitComment(on: issueKey) }
                 }
@@ -114,21 +131,6 @@ struct CommentComposer: View {
                 .controlSize(.small)
                 .disabled(store.commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           || store.isSubmittingComment)
-
-                if isEditing {
-                    Button("Cancel") { store.cancelCommentEdit() }
-                        .controlSize(.small)
-                }
-
-                if store.isSubmittingComment {
-                    ProgressView().controlSize(.small).scaleEffect(0.6)
-                }
-
-                Spacer(minLength: 0)
-
-                Text("Paste a screenshot to attach it")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
         }
     }

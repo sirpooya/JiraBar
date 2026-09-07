@@ -80,11 +80,13 @@ struct JiraClient {
         try await post("/rest/api/2/issue/\(issueKey)/transitions", body: body)
     }
 
-    /// An issue's comments, oldest first, rendered by the server.
+    /// An issue's comments, newest first, rendered by the server.
     func comments(for issueKey: String, maxResults: Int = 30) async throws -> [JiraComment] {
         let response = try await get("/rest/api/2/issue/\(issueKey)/comment",
+                                     // "-created" is newest first, which is the order the web UI
+                                     // shows and therefore the order these are read in.
                                      query: ["expand": "renderedBody",
-                                             "orderBy": "created",
+                                             "orderBy": "-created",
                                              "maxResults": String(maxResults)],
                                      as: JiraCommentsResponse.self)
         return response.comments

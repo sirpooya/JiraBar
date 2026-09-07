@@ -12,7 +12,11 @@ import WebKit
 struct DescriptionWebView: NSViewRepresentable {
     let html: String
     let isDark: Bool
-    var maxHeight: CGFloat = 260
+    /// Effectively uncapped by default. A capped web view scrolls inside itself, which put a
+    /// second scroll area inside the one the detail view already has: two nested scrollers, and
+    /// the trackpad picking whichever one it felt like. The page is sized to its full content and
+    /// the detail view's own ScrollView is the only thing that scrolls.
+    var maxHeight: CGFloat = 20000
     /// Called with the comment id when an Edit link in the rendered thread is clicked.
     var onEditComment: ((String) -> Void)?
     /// Called with (comment id, emoji codepoint) to toggle a reaction.

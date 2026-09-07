@@ -16,6 +16,7 @@ struct PopoverRootView: View {
                     store.actionError = nil
                 }
             } else {
+                if store.isShowingSampleData { sampleDataBanner }
                 header
                 Divider().opacity(0.5)
                 content
@@ -24,6 +25,24 @@ struct PopoverRootView: View {
             }
         }
         .frame(width: Self.width)
+    }
+
+    /// Shown only under `--qc-state=...`. Loud on purpose: fixture issues look exactly like real
+    /// ones, and a build accidentally left running with the flag reads as a genuine board.
+    private var sampleDataBanner: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("SAMPLE DATA")
+                .font(.system(size: 10, weight: .bold))
+            Text("not your Jira. Launched with --qc-state.")
+                .font(.system(size: 10))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(Color.yellow)
     }
 
     // MARK: - Header

@@ -138,6 +138,9 @@ final class IssueStore {
         state.issues.first { $0.key == key }
     }
 
+    /// True when the popover is showing fixtures rather than anything from the server.
+    var isShowingSampleData: Bool { forcedState != nil }
+
     /// The menu bar count: whatever the selected column holds.
     var badgeCount: Int { state.openCount }
 

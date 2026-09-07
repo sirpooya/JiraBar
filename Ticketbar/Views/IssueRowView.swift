@@ -99,7 +99,7 @@ struct PlatformPill: View {
     let platform: Platform
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
             Image(systemName: platform.symbolName)
                 .font(.system(size: 8, weight: .semibold))
             Text(platform.label)

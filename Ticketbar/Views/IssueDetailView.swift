@@ -18,6 +18,19 @@ struct IssueDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if store.isShowingSampleData {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("SAMPLE DATA").font(.system(size: 10, weight: .bold))
+                    Text("not your Jira.").font(.system(size: 10))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .background(Color.yellow)
+            }
             header
             Divider().opacity(0.5)
 
@@ -76,15 +89,23 @@ struct IssueDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back to the list")
 
+            // The title hugs its text so the platform pill sits against it. It used to stretch to
+            // fill the row, which pushed the pill across the header and made it read as belonging
+            // to the buttons on the right rather than to the title.
             Text(issue.cleanSummary)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
 
             if let platform = issue.platform {
                 PlatformPill(platform: platform)
+                    // Centre the capsule on the title's first line. Left to the default the pill
+                    // hangs low, because its own baseline sits inside its vertical padding.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
+
+            Spacer(minLength: 6)
 
             moveMenu
 
@@ -134,8 +155,6 @@ struct IssueDetailView: View {
         let comments = store.commentsByKey[issue.key]
 
         VStack(alignment: .leading, spacing: 6) {
-            Divider().opacity(0.5)
-
             HStack(spacing: 5) {
                 Text("Comments")
                     .font(.system(size: 11, weight: .semibold))
@@ -154,6 +173,11 @@ struct IssueDetailView: View {
                 }
             }
 
+            CommentComposer(store: store, issueKey: issue.key)
+                // Breathing room before the thread starts, so the composer reads as its own
+                // thing rather than as part of the first comment under it.
+                .padding(.bottom, 10)
+
             if let comments {
                 if comments.isEmpty {
                     Text("No comments yet.")
@@ -165,7 +189,6 @@ struct IssueDetailView: View {
                                             editableIDs: store.editableCommentIDs(for: issue.key),
                                             reactions: store.reactionsByComment),
                                        isDark: colorScheme == .dark,
-                                       maxHeight: 320,
                                        onEditComment: { id in
                                            store.beginCommentEdit(id, on: issue.key)
                                        },
@@ -182,9 +205,6 @@ struct IssueDetailView: View {
                         reactionPicker(for: picking)
                     }
                 }
-
-                CommentComposer(store: store, issueKey: issue.key)
-                    .padding(.top, 4)
             }
         }
     }
