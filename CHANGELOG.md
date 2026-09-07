@@ -37,7 +37,5 @@ section when a release is cut.
 
 ### Fixed
 - Comments no longer all show as edited when the server sends no updated timestamp
-- The issue key is back on each row in the popover list, leading the status and platform pills
 - The detail view had two nested scroll areas competing for the trackpad
-- The Keychain no longer asks for your login password on every launch. The app was ad-hoc signed, which gave it a new code identity on each rebuild, and a Keychain item only trusts the exact identity that created it.
 
