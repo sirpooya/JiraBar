@@ -43,7 +43,25 @@ enum QCHooks {
         return response.issues
     }()
 
-    private static let sampleJSON = """
+    /// Relative to the day the QC pass runs, so the fixture always shows one overdue, one due
+    /// today and one with no date, rather than drifting into "everything is overdue" after a week.
+    private static func day(_ offset: Int) -> String {
+        let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private static func timestamp(_ hoursAgo: Int) -> String {
+        let date = Calendar.current.date(byAdding: .hour, value: -hoursAgo, to: Date()) ?? Date()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        return formatter.string(from: date)
+    }
+
+    private static var sampleJSON: String { """
     {
       "total": 4,
       "issues": [
@@ -55,8 +73,8 @@ enum QCHooks {
             "status": {"id": "3", "name": "In-Progress", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
             "priority": {"id": "2", "name": "High"},
             "issuetype": {"name": "Task", "subtask": false},
-            "updated": "2026-09-02T09:12:44.000+0330",
-            "duedate": "2026-09-04",
+            "updated": "\(timestamp(2))",
+            "duedate": "\(day(0))",
             "parent": {"key": "DDS-100", "fields": {"summary": "Form controls"}},
             "customfield_10411": {"value": "Web"}
           },
@@ -72,7 +90,7 @@ enum QCHooks {
             "status": {"id": "1", "name": "Sprint Backlog", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
             "priority": {"id": "3", "name": "Medium"},
             "issuetype": {"name": "Story", "subtask": false},
-            "updated": "2026-09-01T17:40:02.000+0330",
+            "updated": "\(timestamp(20))",
             "duedate": null,
             "customfield_10411": {"value": "Mobile"}
           },
@@ -86,8 +104,8 @@ enum QCHooks {
             "status": {"id": "5", "name": "UAT", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
             "priority": {"id": "4", "name": "Low"},
             "issuetype": {"name": "Task", "subtask": false},
-            "updated": "2026-08-28T11:05:19.000+0330",
-            "duedate": "2026-08-30",
+            "updated": "\(timestamp(70))",
+            "duedate": "\(day(3))",
             "customfield_10411": null
           },
           "renderedFields": {"description": "<p>Every shadow leaf must alias a primitive.</p><table><tr><th>Level</th><th>Blur</th></tr><tr><td>1</td><td>2px</td></tr></table>"}
@@ -100,8 +118,8 @@ enum QCHooks {
             "status": {"id": "6", "name": "Blocked / Rejected", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
             "priority": {"id": "1", "name": "Highest"},
             "issuetype": {"name": "Bug", "subtask": false},
-            "updated": "2026-08-24T08:22:00.000+0330",
-            "duedate": "2026-08-20",
+            "updated": "\(timestamp(150))",
+            "duedate": "\(day(-2))",
             "customfield_10411": {"value": "Web"}
           },
           "renderedFields": {"description": "<p>Chips past the third wrap instead of scrolling.</p><pre><code>overflow: hidden;</code></pre>"}
@@ -109,4 +127,5 @@ enum QCHooks {
       ]
     }
     """
+    }
 }

@@ -15,9 +15,14 @@ struct SettingsView: View {
     /// to travel back into a view, and a field that shows it is a field that can be copied out of.
     @State private var pastedToken = ""
     @State private var isTesting = false
+    /// Set only when the user explicitly asks to replace a token that is already saved.
+    @State private var isReplacingToken = false
     @State private var testResult: TestResult?
     @State private var launchAtLogin = false
     @State private var launchAtLoginMessage: String?
+
+    /// The field is shown when there is nothing saved yet, or when the user asked to replace it.
+    private var isEditingToken: Bool { !store.hasToken || isReplacingToken }
 
     private enum TestResult: Equatable {
         case success(String)
@@ -48,37 +53,70 @@ struct SettingsView: View {
                              monospaced: true)
             SettingsDivider()
 
-            SettingsRow("Personal Access Token",
-                        subtitle: store.hasToken
-                            ? "A token is stored in your Keychain. Paste a new one to replace it."
-                            : "Create one in Jira, then paste it here.") {
-                SecureField("Paste token", text: $pastedToken)
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(maxWidth: SettingsMetrics.controlWidth)
+            // Once a token is saved there is nothing to type, so the field goes away. Leaving an
+            // empty input sitting there invites a re-paste that is not needed, and it takes first
+            // responder, which is what makes macOS offer the Passwords popup every time the window
+            // opens. Replacing a token is a deliberate act, so it gets a deliberate button.
+            if isEditingToken {
+                SettingsRow("Personal Access Token",
+                            subtitle: "Paste the token from Jira. It is checked against the server before it is saved.") {
+                    SecureField("Paste token", text: $pastedToken)
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(maxWidth: SettingsMetrics.controlWidth)
+                }
+            } else {
+                SettingsRow("Personal Access Token",
+                            subtitle: "Held in your Keychain for \(parsedBaseURL?.host ?? "this server"). Ticketbar never stores it anywhere else.") {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.green)
+                }
             }
             SettingsDivider()
 
             SettingsBlock {
                 HStack(spacing: 8) {
-                    Button("Create a Token...") {
-                        if let url = tokenPageURL { NSWorkspace.shared.open(url) }
-                    }
-                    .controlSize(.small)
-                    .disabled(tokenPageURL == nil)
+                    if isEditingToken {
+                        Button("Create a Token...") {
+                            if let url = tokenPageURL { NSWorkspace.shared.open(url) }
+                        }
+                        .controlSize(.small)
+                        .disabled(tokenPageURL == nil)
 
-                    Button(isTesting ? "Testing..." : "Test and Save") {
-                        Task { await test() }
-                    }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isTesting || (pastedToken.isEmpty && !store.hasToken))
+                        Button(isTesting ? "Testing..." : "Test and Save") {
+                            Task { await test() }
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isTesting || pastedToken.isEmpty)
 
-                    if store.hasToken {
+                        if store.hasToken {
+                            Button("Cancel") {
+                                isReplacingToken = false
+                                pastedToken = ""
+                            }
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Button(isTesting ? "Testing..." : "Test Connection") {
+                            Task { await test() }
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isTesting)
+
+                        Button("Replace Token...") {
+                            isReplacingToken = true
+                            testResult = nil
+                        }
+                        .controlSize(.small)
+
                         Button("Sign Out") {
                             store.forgetAccount()
                             pastedToken = ""
+                            isReplacingToken = false
                             testResult = nil
                         }
                         .controlSize(.small)
@@ -145,6 +183,7 @@ struct SettingsView: View {
                 }
             }
             pastedToken = ""
+            isReplacingToken = false
             testResult = .success(user.displayName)
             // Asked for here and nowhere else: after the app has proved it can reach the server.
             await notifications.requestAuthorizationIfNeeded()

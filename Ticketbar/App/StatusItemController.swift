@@ -37,6 +37,16 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func configureButton() {
+        // A stable autosave name, never the generic "Item-N" AppKit assigns. The visibility of a
+        // status item is persisted per slot, and a generic slot can inherit a `false` left behind
+        // by an unrelated build. Control Center's log showed exactly that: two tracked hosts, one
+        // of them reporting clientRequestsVisibility false, and no icon on the bar.
+        statusItem.autosaveName = "ticketbar.status.v1"
+        // Not removable by command-dragging it off the bar, which is one documented way a bundle
+        // id ends up on Control Center's blocked list.
+        statusItem.behavior = []
+        statusItem.isVisible = true
+
         guard let button = statusItem.button else { return }
         button.imagePosition = .imageOnly
         button.target = self

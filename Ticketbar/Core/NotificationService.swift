@@ -16,7 +16,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let individualLimit = 5
 
     private let center = UNUserNotificationCenter.current()
-    private static let issueKeyUserInfo = "issueKey"
+    // nonisolated: the delegate callbacks that read it are nonisolated.
+    private nonisolated static let issueKeyUserInfo = "issueKey"
 
     func configure() {
         center.delegate = self

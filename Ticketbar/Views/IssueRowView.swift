@@ -23,7 +23,10 @@ struct IssueRowView: View {
                         DueBadge(due: issue.dueDate)
                     }
                     Text(issue.cleanSummary)
-                        .font(.system(size: 13))
+                        // Medium, not regular: the summary is what the row is about, and beside a
+                        // bold monospaced key at .secondary a regular weight reads as the quieter
+                        // of the two.
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)

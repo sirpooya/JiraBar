@@ -108,6 +108,15 @@ under a running process invalidates its code signature.
   fine. Automatic signing wants a profile it cannot mint headlessly, and dropping the team makes
   manual signing refuse. Ad-hoc was rejected: its signature changes every build, so the Keychain
   ACL re-prompts for the token on every launch. The hash is this Mac's; another Mac needs its own.
+- 2026-09-02 The status item MUST set `autosaveName` (`ticketbar.status.v1`) and `behavior = []`.
+  Symptom without it: the app runs, the popover opens and is anchored correctly, but no icon is on
+  the menu bar. Cause: `NSStatusItem` persists visibility per slot, the generic slot had
+  `"NSStatusItem VisibleCC Item-0" = 0` in this app's defaults, and Control Center honored it. The
+  Control Center log is the diagnostic: `clientRequestsVisibility: false` followed by "Removing
+  ephemeral displayable instance". This is NOT the Tahoe block list, so `menubar-fix` does not
+  apply: there is no "Moving host to blocked list" line. A SwiftUI `MenuBarExtra` with
+  `isInserted` false also registers a slot, so two hosts are tracked and only ours should be
+  visible.
 - 2026-09-02 The PAT is never logged, never printed in an error message, and never written to
   UserDefaults, a plist or a crash report. Redact the `Authorization` header in any request dump.
 

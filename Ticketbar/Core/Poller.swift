@@ -23,7 +23,7 @@ final class Poller {
     /// Cap. Five minutes of base interval times four is twenty, which is long enough that a
     /// laptop off the VPN all afternoon costs almost nothing, and short enough that reconnecting
     /// heals within a coffee break.
-    private static let maxBackoffMultiplier = 4
+    private nonisolated static let maxBackoffMultiplier = 4
 
     init(intervalProvider: @escaping () -> TimeInterval, action: @escaping () async -> Bool) {
         self.intervalProvider = intervalProvider
