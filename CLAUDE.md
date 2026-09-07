@@ -1,9 +1,13 @@
 # CLAUDE.md: Ticketbar (macOS menu-bar client for Jira Server/DC)
 
 ## Goal
-Shows the Jira issues assigned to me in the menu bar, notifies me when a new one lands, renders
-the full description in the popover, and moves an issue to Done without opening a browser. It
-replaces keeping a Jira tab open all day.
+Shows a column of the DDS Jira board in the menu bar, notifies me when a new issue lands in it,
+renders the full description in the popover, and moves an issue to Done without opening a browser.
+It replaces keeping a Jira tab open all day.
+
+The scope is chosen from a dropdown at the top centre of the popover, one entry per board column.
+There is deliberately no "assigned to me" entry: 2026-09-08, the user asked for it to be removed,
+because nothing on this board is assigned to them and the entry was dead weight.
 
 Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
 
@@ -17,8 +21,11 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
   so the artifact is `Ticketbar.app`.
 
 ## Status
-2026-09-02: repo initialized. `project.yml`, `.gitignore`, `CLAUDE.md`, `PLAN.md` written.
-No Swift code yet. Next: M1, Keychain plus `/rest/api/2/myself` proven with a real token.
+2026-09-08: v1 complete and running. Keychain token proven live against works.digikala.com
+(`/myself` returned the real display name). Board 95's columns load from the Agile API and the
+dropdown switches between them live. 54 unit tests green. Not yet proven: moving a real issue to
+Done, which needs permission because it writes to somebody's board.
+2026-09-02: repo initialized, no Swift code yet.
 
 ## The Jira instance (ESTABLISHED, do not re-research)
 - Host `https://works.digikala.com`. Self-hosted **Server/DC**, so the API is `/rest/api/2`. Not
@@ -40,12 +47,24 @@ No Swift code yet. Next: M1, Keychain plus `/rest/api/2/myself` proven with a re
 - `customfield_10411` is Tech Area, values `Web` and `Mobile`. Team convention also puts a
   globe or phone emoji suffix in the summary for the same thing, so the emoji is the fallback
   when the field is empty.
+- **The board is `rapidView=95`, project `DDS`**, from its own URL:
+  `works.digikala.com/secure/RapidBoard.jspa?rapidView=95&projectKey=DDS`. `rapidView` is the id
+  the Agile API wants. It is pinned, not discovered: a project can own several boards, and taking
+  whichever one discovery returns first is a coin toss.
+- A board **column** is not a status. One column can gather several statuses, so the column's
+  status ids are read from the board and queried with `status in (...)`.
+- The sibling repo `~/Documents/GitHub/dds-dashboard` has `lib/jira.ts`, whose
+  `mapJiraStatusToDev` confirms the same nine status names. Note it points at
+  `dkjira.digikala.com`; **this app uses `works.digikala.com`**, which is the host the real token
+  authenticated against.
 
 ## Endpoints, exhaustively
 | What | Call |
 |---|---|
 | Validate a token, get the display name | `GET /rest/api/2/myself` |
-| My open issues | `GET /rest/api/2/search`, `jql=assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC`, `fields=summary,description,status,priority,issuetype,updated,duedate,parent,customfield_10411`, `expand=renderedFields`, `maxResults=50` |
+| The board's columns | `GET /rest/agile/1.0/board/95/configuration`, read `columnConfig.columns[].statuses[].id` |
+| Find the board, if 95 ever changes | `GET /rest/agile/1.0/board?projectKeyOrId=DDS` |
+| A column's issues | `GET /rest/api/2/search`, `jql=project = DDS AND status in (<ids>) ORDER BY updated DESC`, `fields=summary,description,status,priority,issuetype,updated,duedate,parent,customfield_10411`, `expand=renderedFields`, `maxResults=50` |
 | Available transitions | `GET /rest/api/2/issue/{key}/transitions` |
 | Move an issue | `POST /rest/api/2/issue/{key}/transitions` with the matching transition id |
 | Comment | `POST /rest/api/2/issue/{key}/comment` |
@@ -117,6 +136,14 @@ under a running process invalidates its code signature.
   apply: there is no "Moving host to blocked list" line. A SwiftUI `MenuBarExtra` with
   `isInserted` false also registers a slot, so two hosts are tracked and only ours should be
   visible.
+- 2026-09-08 The popover lists **one board column**, chosen from a dropdown at the top centre.
+  Columns come from the Agile API, never a hardcoded list, so a board the team rearranges needs no
+  code change. Three fallbacks in order: pinned board 95, discovery by project key, then the nine
+  workflow statuses in this file. A column with no statuses mapped to it is dropped, because it
+  could only ever return nothing, which is indistinguishable from the empty-list bug.
+- 2026-09-08 The seen-issue set is **per column**, keyed by the column name. One shared set would
+  turn every column switch into a notification storm, because the new column's issues have never
+  been seen by the old column's set.
 - 2026-09-02 The PAT is never logged, never printed in an error message, and never written to
   UserDefaults, a plist or a crash report. Redact the `Authorization` header in any request dump.
 
@@ -161,12 +188,15 @@ skill.
 - No em dashes: prose, UI strings, code comments, commit messages.
 
 ## Definition of done (v1)
-- [ ] A PAT pasted once survives quit, relaunch and reboot, and lives only in the Keychain
-- [ ] Badge count matches the Jira search result count
-- [ ] A newly assigned issue produces exactly one notification, and clicking it opens that issue
-- [ ] An expired token shows the token-expired state and never an empty list
-- [ ] Off VPN shows the unreachable state and never an empty list
-- [ ] An issue can be moved to Done from the popover, confirmed in the browser
+- [x] A PAT pasted once survives quit, relaunch and reboot, and lives only in the Keychain
+- [x] Badge count matches the Jira search result count
+- [x] The dropdown lists the board's real columns and switching one reloads the list
+- [ ] An issue newly arriving in the selected column produces exactly one notification, and
+      clicking it opens that issue
+- [x] An expired token shows the token-expired state and never an empty list (screenshot)
+- [x] Off VPN shows the unreachable state and never an empty list (screenshot)
+- [ ] An issue can be moved to Done from the popover, confirmed in the browser (needs permission:
+      this writes to a real board)
 - [ ] The description renders readably in light and dark, tables and code blocks included
-- [ ] Icon is legible in template and color mode, on light and dark menu bars
+- [x] Icon is legible in template and color mode, on light and dark menu bars
 - [ ] Polling pauses across sleep and does not burst on wake

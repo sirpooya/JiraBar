@@ -153,7 +153,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let defaults = UserDefaults.standard
         let issues = store.state.issues
         let image = StatusItemIcon.image(
-            count: store.state.openCount,
+            count: store.badgeCount,
             urgency: StatusItemIcon.Urgency.from(issues),
             monochrome: defaults.bool(forKey: Keys.monochromeIcon),
             showCount: defaults.bool(forKey: Keys.showBadgeCount))
@@ -170,8 +170,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         case .tokenRejected: return "Ticketbar: token expired"
         case .unreachable: return "Ticketbar: cannot reach the server"
         case .failed: return "Ticketbar: error"
-        case .issues(let list):
-            return list.count == 1 ? "Ticketbar: 1 open issue" : "Ticketbar: \(list.count) open issues"
+        case .issues:
+            let count = store.badgeCount
+            return count == 1 ? "Ticketbar: 1 open issue" : "Ticketbar: \(count) open issues"
         }
     }
 }

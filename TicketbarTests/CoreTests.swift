@@ -208,3 +208,57 @@ final class PollerTests: XCTestCase {
         XCTAssertEqual(Keys.pollInterval(defaults), 120)
     }
 }
+
+// MARK: - Board scope
+
+final class BoardScopeTests: XCTestCase {
+
+    /// A column can gather several statuses, so it must query all of them, not just the first.
+    func testAColumnQueriesEveryStatusItGathers() {
+        let column = BoardColumn(name: "Planning", statusIDs: ["10101", "10102"])
+        XCTAssertEqual(column.jql(projectKey: "DDS"),
+                       "project = DDS AND status in (10101, 10102) ORDER BY updated DESC")
+    }
+
+    func testTheFallbackColumnsQueryByQuotedName() {
+        let column = BoardColumn(name: "Blocked / Rejected", statusNames: ["Blocked / Rejected"])
+        XCTAssertEqual(column.statusClause, "status in (\"Blocked / Rejected\")")
+    }
+
+    /// The fallback list is what the dropdown offers when the Agile API is unavailable, so it has
+    /// to match the workflow statuses recorded in CLAUDE.md.
+    func testTheFallbackCoversEveryKnownWorkflowStatus() {
+        let names = Set(BoardColumn.fallback.map(\.name))
+        for expected in ["Sprint Backlog", "Planning Web", "Planning App", "In-Progress",
+                         "Storybook", "Testing", "Blocked / Rejected", "UAT", "Done"] {
+            XCTAssertTrue(names.contains(expected), "the dropdown would be missing \(expected)")
+        }
+    }
+
+    /// A column with nothing mapped to it can only ever return nothing, which would look exactly
+    /// like the empty-list bug this app exists to avoid. It is dropped instead.
+    func testColumnsWithNoStatusesAreDropped() throws {
+        let json = """
+        {"id": 95, "name": "DDS board", "columnConfig": {"columns": [
+          {"name": "Backlog", "statuses": [{"id": "1"}]},
+          {"name": "Holding pen", "statuses": []},
+          {"name": "Done", "statuses": [{"id": "6"}]}]}}
+        """.data(using: .utf8)!
+        let configuration = try JSONDecoder().decode(BoardConfiguration.self, from: json)
+        XCTAssertEqual(configuration.columns.map(\.name), ["Backlog", "Done"])
+    }
+
+    /// Two columns must never share a seen-issue set.
+    func testSeenNamespacesAreDistinctPerColumn() {
+        XCTAssertEqual(BoardColumn(name: "In-Progress").seenNamespace, "in-progress")
+        XCTAssertEqual(BoardColumn(name: "Sprint Backlog").seenNamespace, "sprint-backlog")
+        XCTAssertNotEqual(BoardColumn(name: "UAT").seenNamespace,
+                          BoardColumn(name: "Testing").seenNamespace)
+    }
+
+    /// Pinned from the board's own URL, rather than taking whichever board discovery returns first.
+    func testTheBoardIsPinnedToTheDDSRapidView() {
+        XCTAssertEqual(Keys.defaultBoardID, 95)
+        XCTAssertEqual(Keys.defaultProjectKey, "DDS")
+    }
+}

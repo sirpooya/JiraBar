@@ -16,8 +16,19 @@ enum Keys {
     static let accountDisplayName = "in.pooya.ticketbar.accountDisplayName"
     static let seenIssueKeys = "in.pooya.ticketbar.seenIssueKeys"
     static let seenSetSeeded = "in.pooya.ticketbar.seenSetSeeded"
+    static let boardProjectKey = "in.pooya.ticketbar.boardProjectKey"
+    static let boardID = "in.pooya.ticketbar.boardID"
+    static let cachedColumns = "in.pooya.ticketbar.cachedColumns"
+    static let selectedScope = "in.pooya.ticketbar.selectedScope"
 
     static let defaultBaseURL = "https://works.digikala.com"
+    /// The DDS board's project. dds-dashboard's lib/jira.ts uses the same key.
+    static let defaultProjectKey = "DDS"
+    /// The DDS board, from its own URL:
+    /// works.digikala.com/secure/RapidBoard.jspa?rapidView=95&projectKey=DDS
+    /// `rapidView` is the board id the Agile API wants. Pinned rather than discovered, because
+    /// a project can own several boards and picking the first one returned is a coin toss.
+    static let defaultBoardID = 95
 
     /// The Jira admin sets the real ceiling; these are the bounds the UI offers.
     static let pollMinutesRange: ClosedRange<Int> = 2...5
@@ -30,6 +41,8 @@ enum Keys {
             showBadgeCount: true,
             notifyOnNewIssue: true,
             seenSetSeeded: false,
+            boardProjectKey: defaultProjectKey,
+            boardID: defaultBoardID,
         ])
     }
 

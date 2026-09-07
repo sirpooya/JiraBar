@@ -37,16 +37,31 @@ struct JiraClient {
         try await get("/rest/api/2/myself", query: [:], as: JiraUser.self)
     }
 
-    /// Open issues assigned to the token's owner, newest first.
-    func openIssues(maxResults: Int = 50) async throws -> [JiraIssue] {
+    /// Any JQL. One field list and one expand for every search, so a scope added later cannot
+    /// forget `renderedFields` and end up with no description in the detail view.
+    func search(jql: String, maxResults: Int = 50) async throws -> [JiraIssue] {
         let query: [String: String] = [
-            "jql": "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC",
+            "jql": jql,
             "fields": "summary,description,status,priority,issuetype,updated,duedate,parent,customfield_10411",
             "expand": "renderedFields",
             "maxResults": String(maxResults),
         ]
         let response = try await get("/rest/api/2/search", query: query, as: JiraSearchResponse.self)
         return response.issues
+    }
+
+    // MARK: - Agile board
+
+    /// The boards belonging to a project. Server/DC serves the Agile API from its own path.
+    func boards(projectKey: String) async throws -> [AgileBoard] {
+        let response = try await get("/rest/agile/1.0/board",
+                                     query: ["projectKeyOrId": projectKey, "maxResults": "50"],
+                                     as: AgileBoardsResponse.self)
+        return response.values
+    }
+
+    func boardConfiguration(id: Int) async throws -> BoardConfiguration {
+        try await get("/rest/agile/1.0/board/\(id)/configuration", query: [:], as: BoardConfiguration.self)
     }
 
     /// The transitions this issue can take right now, for this user. Always read before writing:

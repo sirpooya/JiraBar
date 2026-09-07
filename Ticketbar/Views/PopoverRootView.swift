@@ -28,44 +28,72 @@ struct PopoverRootView: View {
 
     // MARK: - Header
 
+    /// A ZStack, not an HStack: the dropdown is centred on the popover, so it must not be pushed
+    /// around by however wide the count pill or the buttons happen to be.
     private var header: some View {
-        HStack(spacing: 8) {
-            Text(store.accountName ?? "Ticketbar")
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
+        ZStack {
+            scopePicker
 
-            if case .issues(let list) = store.state {
-                Text("\(list.count)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-            }
+            HStack(spacing: 8) {
+                if store.badgeCount > 0 {
+                    Text("\(store.badgeCount)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .help("\(store.badgeCount) issues in this column")
+                }
 
-            Spacer()
+                Spacer(minLength: 0)
 
-            if store.isRefreshing {
-                ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16)
-            } else {
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium))
+                if store.isRefreshing {
+                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16)
+                } else {
+                    Button(action: onRefresh) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh now")
+                    .accessibilityLabel("Refresh now")
+                }
+
+                Button(action: onOpenSettings) {
+                    Image(systemName: "gearshape").font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .help("Refresh now")
-                .accessibilityLabel("Refresh now")
+                .help("Settings")
+                .accessibilityLabel("Settings")
             }
-
-            Button(action: onOpenSettings) {
-                Image(systemName: "gearshape").font(.system(size: 11, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .help("Settings")
-            .accessibilityLabel("Settings")
+            .foregroundStyle(.secondary)
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+    }
+
+    /// The board's columns, and nothing else. They come from the server, so a board the team
+    /// rearranges needs no change here.
+    private var scopePicker: some View {
+        Menu {
+            ForEach(store.columns) { column in
+                Button {
+                    store.scope = column
+                } label: {
+                    Label(column.name, systemImage: store.scope == column ? "checkmark" : "")
+                }
+            }
+        } label: {
+            // No hand-drawn chevron here. `.menuIndicator(.hidden)` does not take on the
+            // borderless menu style, so a custom one just ends up as a second arrow in the wrong
+            // place; the system indicator is left to do its own job.
+            Text(store.scope?.name ?? "Loading board...")
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(store.columns.isEmpty)
+        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"). Choose a board column.")
     }
 
     // MARK: - Content
@@ -104,12 +132,16 @@ struct PopoverRootView: View {
 
     private var footer: some View {
         HStack(spacing: 6) {
+            if let name = store.accountName {
+                Text(name).lineLimit(1)
+                Text("·")
+            }
             if let last = store.lastRefresh {
                 Text("Updated \(last.formatted(date: .omitted, time: .shortened))")
             } else {
                 Text("Not updated yet")
             }
-            Spacer()
+            Spacer(minLength: 4)
             Button("Quit", action: onQuit)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)

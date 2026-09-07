@@ -1,7 +1,8 @@
 import Foundation
 import Observation
 
-/// The one piece of state the whole app reads: what to show, who you are, and what is in flight.
+/// The one piece of state the whole app reads: which board column is on screen, what is in it,
+/// and what is in flight.
 ///
 /// Everything that could turn a failure into "no issues" happens here, so it is all in one file
 /// and easy to audit: `refresh()` writes `ContentState.from(issues:)` only on a successful
@@ -21,28 +22,48 @@ final class IssueStore {
     /// The issue the detail view is showing, or nil for the list.
     var selectedKey: String?
 
+    /// The board's columns, read from the server. Empty until the first successful load.
+    private(set) var columns: [BoardColumn] = []
+
+    /// The column being listed. Nil only before the columns have ever loaded.
+    var scope: BoardColumn? {
+        didSet {
+            guard scope != oldValue else { return }
+            defaults.set(scope?.name ?? "", forKey: Keys.selectedScope)
+            selectedKey = nil
+            actionError = nil
+            state = .loading
+            Task { await refresh() }
+        }
+    }
+
     let tokenStore: TokenStore
     private let defaults: UserDefaults
-    private let seen: SeenIssues
     private let notifications: NotificationService
     private let session: URLSession
+    /// One seen-issue set per column. Shared state would make every column switch a storm.
+    private var seenByColumn: [String: SeenIssues] = [:]
     /// Set once QC forces a state, which then wins over anything the network says.
     private let forcedState: ContentState?
 
     init(defaults: UserDefaults = .standard,
          tokenStore: TokenStore = TokenStore(),
-         seen: SeenIssues = SeenIssues(),
          notifications: NotificationService,
          session: URLSession = JiraClient.makeSession(),
          forcedState: ContentState? = nil) {
         self.defaults = defaults
         self.tokenStore = tokenStore
-        self.seen = seen
         self.notifications = notifications
         self.session = session
         self.forcedState = forcedState
         self.accountName = defaults.string(forKey: Keys.accountDisplayName)
-        if let forcedState { self.state = forcedState }
+        if let forcedState {
+            self.state = forcedState
+            // A forced state never talks to the server, so the dropdown would otherwise be empty
+            // and the board scope could not be photographed.
+            self.columns = BoardColumn.fallback
+        }
+        restoreCachedBoard()
     }
 
     // MARK: - Configuration
@@ -55,6 +76,17 @@ final class IssueStore {
     }
 
     var hasToken: Bool { tokenStore.hasToken(for: baseURL) }
+
+    var projectKey: String {
+        let key = defaults.string(forKey: Keys.boardProjectKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return key.isEmpty ? Keys.defaultProjectKey : key
+    }
+
+    var boardID: Int {
+        let stored = defaults.integer(forKey: Keys.boardID)
+        return stored > 0 ? stored : Keys.defaultBoardID
+    }
 
     /// Built fresh each call so a token repaired in Settings takes effect immediately, and a
     /// changed base URL cannot be served by a stale client.
@@ -72,6 +104,52 @@ final class IssueStore {
 
     func issue(for key: String) -> JiraIssue? {
         state.issues.first { $0.key == key }
+    }
+
+    /// The menu bar count: whatever the selected column holds.
+    var badgeCount: Int { state.openCount }
+
+    // MARK: - Board
+
+    /// Columns are cached so the dropdown is populated on the very first frame after launch,
+    /// before any network call has come back.
+    private func restoreCachedBoard() {
+        if columns.isEmpty,
+           let data = defaults.data(forKey: Keys.cachedColumns),
+           let cached = try? JSONDecoder().decode([BoardColumn].self, from: data) {
+            columns = cached
+        }
+        let stored = defaults.string(forKey: Keys.selectedScope) ?? ""
+        scope = columns.first { $0.name == stored } ?? columns.first
+    }
+
+    /// Reads the board's columns, in three steps, each a fallback for the one before:
+    ///   1. the pinned board id, which is the DDS board's own `rapidView` number,
+    ///   2. discovery by project key, in case the board was rebuilt and renumbered,
+    ///   3. the workflow statuses recorded in CLAUDE.md, for an instance that has the Agile API
+    ///      switched off and answers 404 rather than saying so.
+    func loadBoardColumns() async {
+        guard forcedState == nil, let client else { return }
+        var discovered: [BoardColumn] = []
+
+        if let configuration = try? await client.boardConfiguration(id: boardID) {
+            discovered = configuration.columns
+        }
+        if discovered.isEmpty,
+           let boards = try? await client.boards(projectKey: projectKey), let board = boards.first,
+           let configuration = try? await client.boardConfiguration(id: board.id) {
+            discovered = configuration.columns
+        }
+        if discovered.isEmpty { discovered = BoardColumn.fallback }
+
+        columns = discovered
+        if let data = try? JSONEncoder().encode(discovered) {
+            defaults.set(data, forKey: Keys.cachedColumns)
+        }
+        // A column that has gone away must not stay selected, or the list would query statuses
+        // that no longer exist and come back empty for a reason the user cannot see.
+        let wanted = scope?.name ?? defaults.string(forKey: Keys.selectedScope) ?? ""
+        scope = discovered.first { $0.name == wanted } ?? discovered.first
     }
 
     // MARK: - Loading
@@ -92,15 +170,20 @@ final class IssueStore {
             state = .failed("The base URL in Settings is not a valid address.")
             return false
         }
+        if columns.isEmpty { await loadBoardColumns() }
+        guard let column = scope else {
+            state = .failed("No columns could be read from the board.")
+            return false
+        }
 
         isRefreshing = true
         defer { isRefreshing = false }
 
         do {
-            let issues = try await client.openIssues()
+            let issues = try await client.search(jql: column.jql(projectKey: projectKey))
             state = .from(issues)
             lastRefresh = Date()
-            handleNewIssues(in: issues)
+            handleNewIssues(in: issues, for: column)
             return true
         } catch let error as JiraError {
             // Never fall through to an empty list. Every failure gets its own state.
@@ -112,9 +195,17 @@ final class IssueStore {
         }
     }
 
-    /// The seed is its own step, run before any diff can happen, so the backlog that exists the
-    /// first time the app runs never notifies.
-    private func handleNewIssues(in issues: [JiraIssue]) {
+    private func seenIssues(for column: BoardColumn) -> SeenIssues {
+        if let existing = seenByColumn[column.seenNamespace] { return existing }
+        let created = SeenIssues(namespace: column.seenNamespace, defaults: defaults)
+        seenByColumn[column.seenNamespace] = created
+        return created
+    }
+
+    /// The seed is its own step, run before any diff can happen, so whatever is already in a
+    /// column the first time it is opened never notifies.
+    private func handleNewIssues(in issues: [JiraIssue], for column: BoardColumn) {
+        let seen = seenIssues(for: column)
         let keys = issues.map(\.key)
         guard seen.isSeeded else {
             seen.seed(with: keys)
@@ -126,13 +217,14 @@ final class IssueStore {
         }
         let freshKeys = Set(seen.unseen(among: keys))
         guard !freshKeys.isEmpty else { return }
-        notifications.notify(newIssues: issues.filter { freshKeys.contains($0.key) })
+        notifications.notify(newIssues: issues.filter { freshKeys.contains($0.key) },
+                             columnName: column.name)
         seen.markSeen(keys)
     }
 
     // MARK: - Account
 
-    /// Called by the Settings Test button. Records the display name so the popover header can
+    /// Called by the Settings Test button. Records the display name so the popover footer can
     /// show who the token belongs to.
     func verifyToken(baseURL: URL, token: String) async -> Result<JiraUser, JiraError> {
         let probe = JiraClient(baseURL: baseURL, tokenProvider: { token }, session: session)
@@ -167,14 +259,12 @@ final class IssueStore {
 
     /// Moves an issue to whichever transition lands in Jira's `done` category.
     func markDone(_ key: String) async {
-        guard let client else { return }
         if transitionsByKey[key] == nil { await loadTransitions(for: key) }
         guard let done = transitionsByKey[key]?.first(where: { $0.landsInDone }) else {
             actionError = "This issue has no transition to Done from \(issue(for: key)?.statusName ?? "its current status")."
             return
         }
         await apply(done, to: key)
-        _ = client
     }
 
     func apply(_ transition: JiraTransition, to key: String) async {
@@ -196,8 +286,8 @@ final class IssueStore {
             try await client.applyTransition(id: transition.id, to: key)
             transitionsByKey[key] = nil
             if selectedKey == key { selectedKey = nil }
-            // Reload rather than guessing: the issue may leave the result set, or may not, and
-            // only the server knows which.
+            // Reload rather than guessing: the issue may leave the column, or may not, and only
+            // the server knows which.
             await refresh()
         } catch let error as JiraError {
             actionError = Self.message(for: error)

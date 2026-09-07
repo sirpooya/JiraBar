@@ -42,14 +42,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    func notify(newIssues issues: [JiraIssue]) {
+    func notify(newIssues issues: [JiraIssue], columnName: String) {
         guard !issues.isEmpty else { return }
 
         for issue in issues.prefix(Self.individualLimit) {
             let content = UNMutableNotificationContent()
             content.title = issue.key
             content.body = issue.cleanSummary
-            content.subtitle = issue.statusName
+            content.subtitle = columnName
             content.sound = .default
             content.userInfo = [Self.issueKeyUserInfo: issue.key]
             center.add(UNNotificationRequest(identifier: "issue-\(issue.key)",
@@ -60,7 +60,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         let overflow = issues.count - Self.individualLimit
         guard overflow > 0 else { return }
         let content = UNMutableNotificationContent()
-        content.title = "\(overflow) more issues assigned to you"
+        content.title = "\(overflow) more issues in \(columnName)"
         content.body = "Open Ticketbar to see them."
         content.sound = .default
         center.add(UNNotificationRequest(identifier: "issue-overflow-\(UUID().uuidString)",

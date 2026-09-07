@@ -12,16 +12,23 @@ final class SeenIssues {
     private static let capacity = 1000
 
     private let defaults: UserDefaults
+    private let keysKey: String
+    private let seededKey: String
     private var order: [String]
     private var index: Set<String>
 
-    init(defaults: UserDefaults = .standard) {
+    /// One set per namespace. Each board column keeps its own, because switching columns would
+    /// otherwise diff the new column's issues against the old column's set and notify for all of
+    /// them at once.
+    init(namespace: String, defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.order = defaults.stringArray(forKey: Keys.seenIssueKeys) ?? []
+        self.keysKey = Keys.seenIssueKeys + "." + namespace
+        self.seededKey = Keys.seenSetSeeded + "." + namespace
+        self.order = defaults.stringArray(forKey: keysKey) ?? []
         self.index = Set(order)
     }
 
-    var isSeeded: Bool { defaults.bool(forKey: Keys.seenSetSeeded) }
+    var isSeeded: Bool { defaults.bool(forKey: seededKey) }
 
     var count: Int { order.count }
 
@@ -30,7 +37,7 @@ final class SeenIssues {
         order = []
         index = []
         insert(keys)
-        defaults.set(true, forKey: Keys.seenSetSeeded)
+        defaults.set(true, forKey: seededKey)
         persist()
     }
 
@@ -49,7 +56,7 @@ final class SeenIssues {
     func forgetAll() {
         order = []
         index = []
-        defaults.set(false, forKey: Keys.seenSetSeeded)
+        defaults.set(false, forKey: seededKey)
         persist()
     }
 
@@ -66,6 +73,6 @@ final class SeenIssues {
     }
 
     private func persist() {
-        defaults.set(order, forKey: Keys.seenIssueKeys)
+        defaults.set(order, forKey: keysKey)
     }
 }

@@ -20,11 +20,11 @@ final class SeenIssuesTests: XCTestCase {
     }
 
     func testAFreshInstallIsNotSeeded() {
-        XCTAssertFalse(SeenIssues(defaults: defaults).isSeeded)
+        XCTAssertFalse(SeenIssues(namespace: "in-progress", defaults: defaults).isSeeded)
     }
 
     func testSeedingRecordsTheBacklogWithoutReportingAnyOfItAsNew() {
-        let seen = SeenIssues(defaults: defaults)
+        let seen = SeenIssues(namespace: "in-progress", defaults: defaults)
         seen.seed(with: ["A-1", "A-2", "A-3"])
 
         XCTAssertTrue(seen.isSeeded)
@@ -34,13 +34,13 @@ final class SeenIssuesTests: XCTestCase {
     }
 
     func testOnlyGenuinelyNewKeysComeBack() {
-        let seen = SeenIssues(defaults: defaults)
+        let seen = SeenIssues(namespace: "in-progress", defaults: defaults)
         seen.seed(with: ["A-1", "A-2"])
         XCTAssertEqual(seen.unseen(among: ["A-2", "A-3", "A-4"]), ["A-3", "A-4"])
     }
 
     func testUnseenIsReadOnlySoACrashBeforeNotifyingDoesNotSwallowIssues() {
-        let seen = SeenIssues(defaults: defaults)
+        let seen = SeenIssues(namespace: "in-progress", defaults: defaults)
         seen.seed(with: ["A-1"])
         XCTAssertEqual(seen.unseen(among: ["A-9"]), ["A-9"])
         XCTAssertEqual(seen.unseen(among: ["A-9"]), ["A-9"], "reading must not mark anything seen")
@@ -49,22 +49,35 @@ final class SeenIssuesTests: XCTestCase {
     }
 
     func testTheSetSurvivesRelaunch() {
-        SeenIssues(defaults: defaults).seed(with: ["A-1", "A-2"])
-        let reopened = SeenIssues(defaults: defaults)
+        SeenIssues(namespace: "in-progress", defaults: defaults).seed(with: ["A-1", "A-2"])
+        let reopened = SeenIssues(namespace: "in-progress", defaults: defaults)
         XCTAssertTrue(reopened.isSeeded)
         XCTAssertTrue(reopened.unseen(among: ["A-1"]).isEmpty)
     }
 
     func testTheSetIsCappedSoItCannotGrowForever() {
-        let seen = SeenIssues(defaults: defaults)
+        let seen = SeenIssues(namespace: "in-progress", defaults: defaults)
         seen.seed(with: (0..<1400).map { "A-\($0)" })
         XCTAssertEqual(seen.count, 1000)
         XCTAssertTrue(seen.unseen(among: ["A-1399"]).isEmpty, "the newest keys are the ones kept")
         XCTAssertEqual(seen.unseen(among: ["A-0"]), ["A-0"], "the oldest fall off the front")
     }
 
+    /// Each column keeps its own set. Sharing one would make every column switch a notification
+    /// storm, because the new column's issues have never been seen by the old column's set.
+    func testEachColumnKeepsItsOwnSet() {
+        let inProgress = SeenIssues(namespace: "in-progress", defaults: defaults)
+        let testing = SeenIssues(namespace: "testing", defaults: defaults)
+
+        inProgress.seed(with: ["A-1", "A-2"])
+
+        XCTAssertFalse(testing.isSeeded, "seeding one column must not mark another as seeded")
+        XCTAssertEqual(testing.unseen(among: ["A-1"]), ["A-1"])
+        XCTAssertTrue(inProgress.unseen(among: ["A-1"]).isEmpty)
+    }
+
     func testForgettingEverythingReturnsToTheUnseededState() {
-        let seen = SeenIssues(defaults: defaults)
+        let seen = SeenIssues(namespace: "in-progress", defaults: defaults)
         seen.seed(with: ["A-1"])
         seen.forgetAll()
         XCTAssertFalse(seen.isSeeded)
