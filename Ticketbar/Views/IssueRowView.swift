@@ -2,6 +2,9 @@ import SwiftUI
 
 struct IssueRowView: View {
     let issue: JiraIssue
+    /// False when the selected column maps to a single status, because then every row would carry
+    /// the same pill the dropdown above the list already shows.
+    let showsStatus: Bool
     let onSelect: () -> Void
 
     @State private var isHovering = false
@@ -20,8 +23,10 @@ struct IssueRowView: View {
                     Text(issue.key)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    StatusPill(name: issue.statusName,
-                               categoryKey: issue.fields.status?.statusCategory?.key)
+                    if showsStatus {
+                        StatusPill(name: issue.statusName,
+                                   categoryKey: issue.fields.status?.statusCategory?.key)
+                    }
                     if let platform = issue.platform {
                         PlatformPill(platform: platform)
                     }

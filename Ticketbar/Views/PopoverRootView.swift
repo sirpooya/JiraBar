@@ -208,6 +208,7 @@ struct IssueListView: View {
                 LazyVStack(spacing: 1) {
                     ForEach(issues) { issue in
                         IssueRowView(issue: issue,
+                                     showsStatus: store.scope?.gathersMultipleStatuses ?? false,
                                      onSelect: {
                                          store.actionError = nil
                                          store.selectedKey = issue.key
