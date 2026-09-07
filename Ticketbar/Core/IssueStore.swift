@@ -17,6 +17,10 @@ final class IssueStore {
     /// Keys with a transition in flight, so the row can show a spinner and refuse a second click.
     private(set) var busyKeys: Set<String> = []
     private(set) var transitionsByKey: [String: [JiraTransition]] = [:]
+    private(set) var commentsByKey: [String: [JiraComment]] = [:]
+    /// Keys whose comments are being fetched, so the detail view can say so rather than looking
+    /// like an issue with no discussion on it.
+    private(set) var loadingComments: Set<String> = []
     /// A failure from an action (moving an issue), which is separate from a failure to load.
     var actionError: String?
     /// The issue the detail view is showing, or nil for the list.
@@ -26,9 +30,14 @@ final class IssueStore {
     private(set) var columns: [BoardColumn] = []
 
     /// The column being listed. Nil only before the columns have ever loaded.
+    /// True only while `restoreCachedBoard()` is seeding the initial selection, so the observer
+    /// below does not clear state that has just been set and does not fire a refresh the poller
+    /// is about to make anyway.
+    private var isRestoringScope = false
+
     var scope: BoardColumn? {
         didSet {
-            guard scope != oldValue else { return }
+            guard !isRestoringScope, scope != oldValue else { return }
             defaults.set(scope?.name ?? "", forKey: Keys.selectedScope)
             selectedKey = nil
             actionError = nil
@@ -62,8 +71,10 @@ final class IssueStore {
             // A forced state never talks to the server, so the dropdown would otherwise be empty
             // and the board scope could not be photographed.
             self.columns = BoardColumn.fallback
+            self.commentsByKey = QCHooks.sampleComments
         }
         restoreCachedBoard()
+        if forcedState != nil { self.selectedKey = QCHooks.forcedSelection() }
     }
 
     // MARK: - Configuration
@@ -114,6 +125,9 @@ final class IssueStore {
     /// Columns are cached so the dropdown is populated on the very first frame after launch,
     /// before any network call has come back.
     private func restoreCachedBoard() {
+        isRestoringScope = true
+        defer { isRestoringScope = false }
+
         if columns.isEmpty,
            let data = defaults.data(forKey: Keys.cachedColumns),
            let cached = try? JSONDecoder().decode([BoardColumn].self, from: data) {
@@ -257,6 +271,18 @@ final class IssueStore {
         }
     }
 
+    /// Comments are a separate request, made only when a detail view opens. Folding them into
+    /// the list search would make every poll fetch discussion for fifty issues nobody has opened.
+    func loadComments(for key: String) async {
+        guard forcedState == nil, let client else { return }
+        guard commentsByKey[key] == nil, !loadingComments.contains(key) else { return }
+        loadingComments.insert(key)
+        defer { loadingComments.remove(key) }
+        // A failure here is not worth a whole error state: the description is still readable, so
+        // the section just stays empty.
+        commentsByKey[key] = (try? await client.comments(for: key)) ?? []
+    }
+
     /// Moves an issue to whichever transition lands in Jira's `done` category.
     func markDone(_ key: String) async {
         if transitionsByKey[key] == nil { await loadTransitions(for: key) }
@@ -285,6 +311,7 @@ final class IssueStore {
         do {
             try await client.applyTransition(id: transition.id, to: key)
             transitionsByKey[key] = nil
+            commentsByKey[key] = nil
             if selectedKey == key { selectedKey = nil }
             // Reload rather than guessing: the issue may leave the column, or may not, and only
             // the server knows which.

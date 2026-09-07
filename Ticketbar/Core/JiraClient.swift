@@ -80,6 +80,16 @@ struct JiraClient {
         try await post("/rest/api/2/issue/\(issueKey)/transitions", body: body)
     }
 
+    /// An issue's comments, oldest first, rendered by the server.
+    func comments(for issueKey: String, maxResults: Int = 30) async throws -> [JiraComment] {
+        let response = try await get("/rest/api/2/issue/\(issueKey)/comment",
+                                     query: ["expand": "renderedBody",
+                                             "orderBy": "created",
+                                             "maxResults": String(maxResults)],
+                                     as: JiraCommentsResponse.self)
+        return response.comments
+    }
+
     func addComment(_ text: String, to issueKey: String) async throws {
         try await post("/rest/api/2/issue/\(issueKey)/comment", body: ["body": text])
     }

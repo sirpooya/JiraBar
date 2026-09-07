@@ -67,6 +67,7 @@ Done, which needs permission because it writes to somebody's board.
 | A column's issues | `GET /rest/api/2/search`, `jql=project = DDS AND status in (<ids>) ORDER BY updated DESC`, `fields=summary,description,status,priority,issuetype,updated,duedate,parent,customfield_10411`, `expand=renderedFields`, `maxResults=50` |
 | Available transitions | `GET /rest/api/2/issue/{key}/transitions` |
 | Move an issue | `POST /rest/api/2/issue/{key}/transitions` with the matching transition id |
+| Read comments | `GET /rest/api/2/issue/{key}/comment`, `expand=renderedBody`, `orderBy=created` |
 | Comment | `POST /rest/api/2/issue/{key}/comment` |
 
 **Never** try to set `fields.status` directly. It is not writable. Always read the transition list
@@ -141,6 +142,13 @@ under a running process invalidates its code signature.
   code change. Three fallbacks in order: pinned board 95, discovery by project key, then the nine
   workflow statuses in this file. A column with no statuses mapped to it is dropped, because it
   could only ever return nothing, which is indistinguishable from the empty-list bug.
+- 2026-09-08 The detail view's description and comments are each behind a setting, both on by
+  default. Turning one off also skips the request: comments are a separate call made only when a
+  detail view opens, never folded into the list search, which would fetch discussion for fifty
+  issues nobody has opened.
+- 2026-09-08 A whole comment thread is composed into **one** HTML document and shown in one
+  `WKWebView`. One web view per comment does not belong in a popover. Author names and any raw
+  markup are HTML-escaped: comments are other people's text going into a document.
 - 2026-09-08 The seen-issue set is **per column**, keyed by the column name. One shared set would
   turn every column switch into a notification storm, because the new column's issues have never
   been seen by the old column's set.

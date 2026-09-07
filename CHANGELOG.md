@@ -18,4 +18,6 @@ section when a release is cut.
 - Issue detail with the description rendered as Jira sends it, a Done button and the workflow's other transitions
 - Notifications for issues newly arriving in the selected column, with the existing contents recorded silently the first time a column is opened
 - Polling every 2 to 5 minutes, paused across sleep and backed off while the server is unreachable
+- Comments on an issue, rendered as Jira sends them, below the description in the detail view
+- Settings toggles to hide the description or the comments; hiding a section also stops it being fetched
 

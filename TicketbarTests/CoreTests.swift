@@ -262,3 +262,80 @@ final class BoardScopeTests: XCTestCase {
         XCTAssertEqual(Keys.defaultProjectKey, "DDS")
     }
 }
+
+// MARK: - Comments
+
+final class CommentTests: XCTestCase {
+
+    private func decode(_ raw: String) throws -> [JiraComment] {
+        try JSONDecoder().decode(JiraCommentsResponse.self, from: raw.data(using: .utf8)!).comments
+    }
+
+    func testTheServerRenderedBodyIsPreferredOverRawMarkup() throws {
+        let comments = try decode("""
+        {"comments":[{"id":"1","author":{"displayName":"Sara"},
+          "body":"h1. raw markup","renderedBody":"<h1>rendered</h1>",
+          "created":"2026-09-07T10:00:00.000+0330"}]}
+        """)
+        XCTAssertEqual(comments[0].html, "<h1>rendered</h1>")
+    }
+
+    /// Some Server/DC configurations do not return renderedBody. The raw markup must still show,
+    /// with its line breaks, rather than the comment silently rendering as nothing.
+    func testRawMarkupIsUsedWhenTheServerRendersNothing() throws {
+        let comments = try decode("""
+        {"comments":[{"id":"1","author":{"displayName":"Sara"},"body":"line one\\nline two"}]}
+        """)
+        XCTAssertTrue(comments[0].html.contains("line one<br>line two"))
+    }
+
+    /// A comment is other people's text going into an HTML document.
+    func testCommentTextAndAuthorNamesAreEscaped() throws {
+        let comments = try decode("""
+        {"comments":[{"id":"1","author":{"displayName":"<script>x</script>"},
+          "body":"5 < 6 & 7 > 2"}]}
+        """)
+        let html = JiraComment.composedHTML(comments)
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertTrue(html.contains("&lt;script&gt;"))
+        XCTAssertTrue(html.contains("5 &lt; 6 &amp; 7 &gt; 2"))
+    }
+
+    func testAMissingAuthorDoesNotBreakTheThread() throws {
+        let comments = try decode("""
+        {"comments":[{"id":"1","body":"orphan"}]}
+        """)
+        XCTAssertEqual(comments[0].authorName, "Unknown")
+        XCTAssertTrue(JiraComment.composedHTML(comments).contains("Unknown"))
+    }
+
+    /// One document for the whole thread, because a busy issue can carry twenty comments and
+    /// twenty web views is not a thing to put in a popover.
+    func testTheWholeThreadComposesIntoOneDocument() throws {
+        let comments = try decode("""
+        {"comments":[
+          {"id":"1","author":{"displayName":"Sara"},"renderedBody":"<p>first</p>"},
+          {"id":"2","author":{"displayName":"Pooya"},"renderedBody":"<p>second</p>"}]}
+        """)
+        let html = JiraComment.composedHTML(comments)
+        XCTAssertEqual(html.components(separatedBy: "class=\"jc\"").count - 1, 2)
+        XCTAssertTrue(html.contains("first"))
+        XCTAssertTrue(html.contains("second"))
+    }
+
+    func testAnEmptyThreadComposesToNothing() {
+        XCTAssertTrue(JiraComment.composedHTML([]).isEmpty)
+    }
+
+    func testTheQCFixtureCommentsParse() {
+        XCTAssertEqual(QCHooks.sampleComments["DDS-412"]?.count, 2)
+    }
+
+    /// Both sections default to on; the setting exists to turn them off, not to opt in.
+    func testDetailSectionsAreOnByDefault() {
+        let defaults = UserDefaults(suiteName: "ticketbar.tests.\(UUID().uuidString)")!
+        Keys.registerDefaults(defaults)
+        XCTAssertTrue(defaults.bool(forKey: Keys.showDescription))
+        XCTAssertTrue(defaults.bool(forKey: Keys.showComments))
+    }
+}

@@ -12,6 +12,7 @@ import WebKit
 struct DescriptionWebView: NSViewRepresentable {
     let html: String
     let isDark: Bool
+    var maxHeight: CGFloat = 260
     @Binding var contentHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -47,7 +48,7 @@ struct DescriptionWebView: NSViewRepresentable {
                 DispatchQueue.main.async {
                     // Capped: a very long description scrolls inside the popover instead of
                     // making the popover taller than the screen.
-                    self.parent.contentHeight = min(max(height, 20), 260)
+                    self.parent.contentHeight = min(max(height, 20), self.parent.maxHeight)
                 }
             }
         }
@@ -113,6 +114,12 @@ struct DescriptionWebView: NSViewRepresentable {
           hr { border: none; border-top: 1px solid \(rule); margin: 10px 0; }
           .panel, .panelContent { background: \(surface); border-radius: 6px; padding: 8px 10px;
                                   margin: 0 0 8px; }
+          /* One comment. The rule above each one separates the thread without boxing every
+             entry, which at this width would be all border and no text. */
+          .jc { padding: 8px 0; border-top: 1px solid \(rule); }
+          .jc:first-child { border-top: none; padding-top: 0; }
+          .jc:last-child { padding-bottom: 0; }
+          .jcm { color: \(muted); font-size: 11px; margin-bottom: 3px; }
         </style></head>
         <body>\(body)</body></html>
         """

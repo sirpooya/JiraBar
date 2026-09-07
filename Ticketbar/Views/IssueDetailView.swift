@@ -6,7 +6,10 @@ struct IssueDetailView: View {
     let onBack: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(Keys.showDescription) private var showDescription = true
+    @AppStorage(Keys.showComments) private var showComments = true
     @State private var descriptionHeight: CGFloat = 60
+    @State private var commentsHeight: CGFloat = 40
 
     private var transitions: [JiraTransition] { store.transitionsByKey[issue.key] ?? [] }
     private var isBusy: Bool { store.busyKeys.contains(issue.key) }
@@ -24,16 +27,20 @@ struct IssueDetailView: View {
 
                     metadata
 
-                    if let html = issue.descriptionHTML {
-                        DescriptionWebView(html: html,
-                                           isDark: colorScheme == .dark,
-                                           contentHeight: $descriptionHeight)
-                            .frame(height: descriptionHeight)
-                    } else {
-                        Text("This issue has no description.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if showDescription {
+                        if let html = issue.descriptionHTML {
+                            DescriptionWebView(html: html,
+                                               isDark: colorScheme == .dark,
+                                               contentHeight: $descriptionHeight)
+                                .frame(height: descriptionHeight)
+                        } else {
+                            Text("This issue has no description.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+
+                    if showComments { commentsSection }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -45,6 +52,10 @@ struct IssueDetailView: View {
         }
         .task(id: issue.key) {
             await store.loadTransitions(for: issue.key)
+        }
+        .task(id: issue.key) {
+            guard showComments else { return }
+            await store.loadComments(for: issue.key)
         }
     }
 
@@ -101,6 +112,49 @@ struct IssueDetailView: View {
                 Text("Updated \(updated.formatted(.relative(presentation: .named)))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    /// The discussion. A thread is legitimately longer than a description, so it gets more room
+    /// before it starts scrolling inside itself.
+    @ViewBuilder
+    private var commentsSection: some View {
+        let comments = store.commentsByKey[issue.key]
+
+        VStack(alignment: .leading, spacing: 6) {
+            Divider().opacity(0.5)
+
+            HStack(spacing: 5) {
+                Text("Comments")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                if let comments, !comments.isEmpty {
+                    Text("\(comments.count)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+                Spacer(minLength: 0)
+                if store.loadingComments.contains(issue.key) {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                }
+            }
+
+            if let comments {
+                if comments.isEmpty {
+                    Text("No comments yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    DescriptionWebView(html: JiraComment.composedHTML(comments),
+                                       isDark: colorScheme == .dark,
+                                       maxHeight: 320,
+                                       contentHeight: $commentsHeight)
+                        .frame(height: commentsHeight)
+                }
             }
         }
     }

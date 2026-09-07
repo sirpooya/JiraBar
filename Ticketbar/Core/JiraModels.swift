@@ -117,6 +117,69 @@ struct CustomFieldValue: Decodable, Hashable {
     }
 }
 
+// MARK: - Comments
+
+struct JiraCommentsResponse: Decodable {
+    let comments: [JiraComment]
+}
+
+struct JiraComment: Decodable, Identifiable, Hashable {
+    let id: String
+    let author: Author?
+    /// The raw wiki markup. Only used when the server did not return a rendered body.
+    let body: String?
+    /// Present because the request asks for `expand=renderedBody`. Comments are wiki markup for
+    /// the same reason descriptions are, so the server does the rendering.
+    let renderedBody: String?
+    let created: String?
+    let updated: String?
+
+    struct Author: Decodable, Hashable {
+        let displayName: String?
+    }
+
+    var authorName: String { author?.displayName ?? "Unknown" }
+    var createdDate: Date? { created.flatMap(JiraDateFormat.parseTimestamp) }
+
+    /// Rendered HTML if the server gave it, otherwise the raw markup wrapped so it at least
+    /// keeps its line breaks rather than collapsing into one paragraph.
+    var html: String {
+        if let rendered = renderedBody?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rendered.isEmpty {
+            return rendered
+        }
+        let raw = (body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return "<p>" + HTMLEscape.escape(raw).replacingOccurrences(of: "\n", with: "<br>") + "</p>"
+    }
+}
+
+extension JiraComment {
+    /// Composes every comment into one document: one web view for the whole thread instead of one
+    /// per comment, which matters because a busy issue can carry twenty of them.
+    static func composedHTML(_ comments: [JiraComment], now: Date = Date()) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+
+        return comments.map { comment in
+            let when = comment.createdDate.map { formatter.localizedString(for: $0, relativeTo: now) } ?? ""
+            let meta = HTMLEscape.escape(comment.authorName)
+                + (when.isEmpty ? "" : " &middot; " + HTMLEscape.escape(when))
+            return "<div class=\"jc\"><div class=\"jcm\">\(meta)</div>\(comment.html)</div>"
+        }.joined()
+    }
+}
+
+/// Author names and any raw markup are other people's text going into an HTML document, so they
+/// are escaped rather than trusted.
+enum HTMLEscape {
+    static func escape(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
 // MARK: - Transitions
 
 struct JiraTransitionsResponse: Decodable {

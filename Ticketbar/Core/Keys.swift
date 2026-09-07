@@ -13,6 +13,8 @@ enum Keys {
     static let monochromeIcon = "in.pooya.ticketbar.monochromeIcon"
     static let showBadgeCount = "in.pooya.ticketbar.showBadgeCount"
     static let notifyOnNewIssue = "in.pooya.ticketbar.notifyOnNewIssue"
+    static let showDescription = "in.pooya.ticketbar.showDescription"
+    static let showComments = "in.pooya.ticketbar.showComments"
     static let accountDisplayName = "in.pooya.ticketbar.accountDisplayName"
     static let seenIssueKeys = "in.pooya.ticketbar.seenIssueKeys"
     static let seenSetSeeded = "in.pooya.ticketbar.seenSetSeeded"
@@ -40,6 +42,8 @@ enum Keys {
             monochromeIcon: false,
             showBadgeCount: true,
             notifyOnNewIssue: true,
+            showDescription: true,
+            showComments: true,
             seenSetSeeded: false,
             boardProjectKey: defaultProjectKey,
             boardID: defaultBoardID,

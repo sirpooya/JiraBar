@@ -174,6 +174,24 @@ one checked.
 
 ---
 
+## M8. Comments and detail settings (added 2026-09-08, at the user's request)
+
+Model: Sonnet 5, `think`. Mostly plumbing, with one real decision about how to render a thread.
+
+- [x] `GET /rest/api/2/issue/{key}/comment?expand=renderedBody`, fetched only when a detail view
+      opens, never as part of the list search
+- [x] The whole thread composed into one HTML document in one web view
+- [x] Author names and raw markup HTML-escaped
+- [x] A comment with no `renderedBody` falls back to its raw markup with line breaks kept
+- [x] Settings section with "Show the description" and "Show comments", both on by default
+- [x] `--qc-state=detail` opens straight into the detail view, since the popover cannot be clicked
+      without the Accessibility grant
+
+Proof: `_samples/detail-comments.png`, a two-comment thread with authors, relative times and
+inline code, under a rendered description.
+
+---
+
 ## Still open
 
 - Moving a real issue to Done, which needs permission because it writes to somebody's board.

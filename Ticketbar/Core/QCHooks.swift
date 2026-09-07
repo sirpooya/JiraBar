@@ -19,7 +19,7 @@ enum QCHooks {
             .replacingOccurrences(of: "--qc-state=", with: "") else { return nil }
 
         switch raw {
-        case "sample": return .from(sampleIssues)
+        case "sample", "detail": return .from(sampleIssues)
         case "empty": return .empty
         case "loading": return .loading
         case "needs-token": return .needsToken
@@ -28,6 +28,15 @@ enum QCHooks {
         case "failed": return .failed("Jira answered 503. The server is having a problem, not this Mac.")
         default: return nil
         }
+        #else
+        return nil
+        #endif
+    }
+
+    /// The issue the detail view should open on, for `--qc-state=detail`.
+    static func forcedSelection(from arguments: [String] = CommandLine.arguments) -> String? {
+        #if DEBUG
+        return arguments.contains("--qc-state=detail") ? sampleIssues.first?.key : nil
         #else
         return nil
         #endif
@@ -42,6 +51,27 @@ enum QCHooks {
         }
         return response.issues
     }()
+
+    /// Fixture comments for the forced-state builds, keyed by issue.
+    static var sampleComments: [String: [JiraComment]] {
+        guard let data = sampleCommentsJSON.data(using: .utf8),
+              let response = try? JSONDecoder().decode(JiraCommentsResponse.self, from: data) else {
+            return [:]
+        }
+        return ["DDS-412": response.comments]
+    }
+
+    private static var sampleCommentsJSON: String { """
+    {"comments": [
+      {"id": "1", "author": {"displayName": "Sara Ahmadi"},
+       "created": "\(timestamp(26))",
+       "renderedBody": "<p>Snap radius of 8px feels tight on a 320px track. Can we make it proportional?</p>"},
+      {"id": "2", "author": {"displayName": "Pooya Kamel"},
+       "created": "\(timestamp(4))",
+       "renderedBody": "<p>Agreed. Using <code>max(8, trackWidth * 0.025)</code> instead.</p>"}
+    ]}
+    """
+    }
 
     /// Relative to the day the QC pass runs, so the fixture always shows one overdue, one due
     /// today and one with no date, rather than drifting into "everything is overdue" after a week.

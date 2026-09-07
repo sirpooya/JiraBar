@@ -10,6 +10,8 @@ struct SettingsView: View {
     @AppStorage(Keys.monochromeIcon) private var monochromeIcon = false
     @AppStorage(Keys.showBadgeCount) private var showBadgeCount = true
     @AppStorage(Keys.notifyOnNewIssue) private var notifyOnNewIssue = true
+    @AppStorage(Keys.showDescription) private var showDescription = true
+    @AppStorage(Keys.showComments) private var showComments = true
 
     /// The paste field. It is never populated from the Keychain: the stored token has no reason
     /// to travel back into a view, and a field that shows it is a field that can be copied out of.
@@ -32,6 +34,7 @@ struct SettingsView: View {
     var body: some View {
         SettingsTabBody {
             accountSection
+            issueDetailSection
             refreshSection
             menuBarSection
             notificationsSection
@@ -214,6 +217,19 @@ struct SettingsView: View {
     }
 
     // MARK: - Other sections
+
+    private var issueDetailSection: some View {
+        SettingsSection("Issue Detail",
+                        footnote: "Turning a section off also stops Ticketbar fetching it, so a long description or a busy comment thread costs nothing when you are not reading it.") {
+            SettingsRow("Show the description") {
+                SettingsSwitch(isOn: $showDescription)
+            }
+            SettingsDivider()
+            SettingsRow("Show comments") {
+                SettingsSwitch(isOn: $showComments)
+            }
+        }
+    }
 
     private var refreshSection: some View {
         SettingsSection("Refresh",
