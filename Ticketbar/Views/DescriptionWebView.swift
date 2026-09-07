@@ -13,6 +13,12 @@ struct DescriptionWebView: NSViewRepresentable {
     let html: String
     let isDark: Bool
     var maxHeight: CGFloat = 260
+    /// Called with the comment id when an Edit link in the rendered thread is clicked.
+    var onEditComment: ((String) -> Void)?
+    /// Called with (comment id, emoji codepoint) to toggle a reaction.
+    var onToggleReaction: ((String, String) -> Void)?
+    /// Called with the comment id when the reaction picker is asked for.
+    var onPickReaction: ((String) -> Void)?
     @Binding var contentHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -63,7 +69,26 @@ struct DescriptionWebView: NSViewRepresentable {
                 return
             }
             if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated {
-                NSWorkspace.shared.open(url)
+                if url.scheme == JiraComment.actionScheme {
+                    // In-document controls, not links. They never leave the app.
+                    let parts = url.pathComponents.filter { $0 != "/" }
+                    DispatchQueue.main.async {
+                        switch url.host {
+                        case "edit":
+                            if let id = parts.first { self.parent.onEditComment?(id) }
+                        case "picker":
+                            if let id = parts.first { self.parent.onPickReaction?(id) }
+                        case "react":
+                            if parts.count >= 2 {
+                                self.parent.onToggleReaction?(parts[0], parts[1])
+                            }
+                        default:
+                            break
+                        }
+                    }
+                } else {
+                    NSWorkspace.shared.open(url)
+                }
             }
             decisionHandler(.cancel)
         }
@@ -120,6 +145,17 @@ struct DescriptionWebView: NSViewRepresentable {
           .jc:first-child { border-top: none; padding-top: 0; }
           .jc:last-child { padding-bottom: 0; }
           .jcm { color: \(muted); font-size: 11px; margin-bottom: 3px; }
+          /* Edit only. There is no delete control here by design. */
+          .jce { margin-top: 5px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+          .jcl { font-size: 11px; color: \(muted); margin-left: 4px; }
+          .jcl:hover { color: \(link); text-decoration: underline; }
+          /* Reaction chips. The one you added yourself is outlined in the accent colour. */
+          .jr, .jrp { font-size: 11px; line-height: 1; color: \(text); background: \(surface);
+                      border: 1px solid transparent; border-radius: 10px; padding: 3px 7px;
+                      text-decoration: none; }
+          .jr:hover, .jrp:hover { background: \(rule); text-decoration: none; }
+          .jrm { border-color: \(link); color: \(link); }
+          .jrp { color: \(muted); }
         </style></head>
         <body>\(body)</body></html>
         """

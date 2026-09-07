@@ -8,10 +8,12 @@ struct IssueDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(Keys.showDescription) private var showDescription = true
     @AppStorage(Keys.showComments) private var showComments = true
+    @AppStorage(Keys.showMetadata) private var showMetadata = true
     @State private var descriptionHeight: CGFloat = 60
     @State private var commentsHeight: CGFloat = 40
+    /// Chosen but not yet applied. Nothing reaches the server until Move is pressed.
+    @State private var stagedTransition: JiraTransition?
 
-    private var transitions: [JiraTransition] { store.transitionsByKey[issue.key] ?? [] }
     private var isBusy: Bool { store.busyKeys.contains(issue.key) }
 
     var body: some View {
@@ -21,11 +23,15 @@ struct IssueDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(issue.cleanSummary)
-                        .font(.system(size: 14, weight: .semibold))
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let error = store.actionError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
-                    metadata
+                    if showMetadata { metadata }
 
                     if showDescription {
                         if let html = issue.descriptionHTML {
@@ -47,10 +53,9 @@ struct IssueDetailView: View {
             }
             .frame(maxHeight: 340)
 
-            Divider().opacity(0.5)
-            actions
         }
         .task(id: issue.key) {
+            stagedTransition = nil
             await store.loadTransitions(for: issue.key)
         }
         .task(id: issue.key) {
@@ -59,8 +64,11 @@ struct IssueDetailView: View {
         }
     }
 
+    /// The title is the header. The issue key used to sit here and the title below it, which put
+    /// a reference number in the most prominent slot on screen and pushed the thing you actually
+    /// read down a line. The key is still one click away through the browser link.
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
@@ -68,21 +76,24 @@ struct IssueDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back to the list")
 
-            Text(issue.key)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            Text(issue.cleanSummary)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             if let platform = issue.platform {
                 PlatformPill(platform: platform)
             }
 
-            Spacer()
+            moveMenu
 
             if let url = store.browseURL(for: issue.key) {
                 Link(destination: url) {
                     Image(systemName: "arrow.up.forward.square")
                         .font(.system(size: 12, weight: .medium))
                 }
-                .help("Open in browser")
+                .help("Open \(issue.key) in browser")
             }
         }
         .padding(.horizontal, 12)
@@ -149,70 +160,100 @@ struct IssueDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    DescriptionWebView(html: JiraComment.composedHTML(comments),
+                    DescriptionWebView(html: JiraComment.composedHTML(
+                                            comments,
+                                            editableIDs: store.editableCommentIDs(for: issue.key),
+                                            reactions: store.reactionsByComment),
                                        isDark: colorScheme == .dark,
                                        maxHeight: 320,
+                                       onEditComment: { id in
+                                           store.beginCommentEdit(id, on: issue.key)
+                                       },
+                                       onToggleReaction: { id, emojiId in
+                                           Task { await store.toggleReaction(emojiId, commentID: id, on: issue.key) }
+                                       },
+                                       onPickReaction: { id in
+                                           store.pickingReactionFor = id
+                                       },
                                        contentHeight: $commentsHeight)
                         .frame(height: commentsHeight)
+
+                    if let picking = store.pickingReactionFor {
+                        reactionPicker(for: picking)
+                    }
                 }
+
+                CommentComposer(store: store, issueKey: issue.key)
+                    .padding(.top, 4)
             }
         }
     }
 
-    private var actions: some View {
-        VStack(spacing: 6) {
-            if let error = store.actionError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    Task { await store.markDone(issue.key) }
-                } label: {
-                    if isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Done", systemImage: "checkmark")
+    /// A short palette rather than the system emoji panel: the panel cannot be anchored to a
+    /// link inside a web view, and eight reactions is what a tracker actually sees used.
+    private func reactionPicker(for commentID: String) -> some View {
+        HStack(spacing: 4) {
+            ForEach(JiraReaction.palette, id: \.self) { emoji in
+                Button(emoji) {
+                    if let id = JiraReaction.emojiId(for: emoji) {
+                        Task { await store.toggleReaction(id, commentID: commentID, on: issue.key) }
                     }
+                    store.pickingReactionFor = nil
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(isBusy || !hasDoneTransition)
+                .buttonStyle(.plain)
+                .font(.system(size: 15))
+            }
+            Spacer(minLength: 0)
+            Button {
+                store.pickingReactionFor = nil
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.07)))
+    }
 
-                // Every other transition the workflow allows right now. The list comes from the
-                // server, so a scheme change needs no code change here.
-                Menu {
-                    ForEach(otherTransitions) { transition in
+    /// Moving the issue, as one compact control in the header.
+    ///
+    /// It used to be a Done button beside a "Move to..." menu in a bar along the bottom. The menu
+    /// applied its choice the instant it was picked while Done was a separate action that happened
+    /// to duplicate one of the menu's entries, so it read as "choose a target, then press Done to
+    /// confirm", which is not what it did. One menu, one meaning: what you pick is what happens.
+    @ViewBuilder
+    private var moveMenu: some View {
+        if isBusy {
+            ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 16)
+        } else if !transitions.isEmpty {
+            Menu {
+                Section("Move from \(issue.statusName) to") {
+                    ForEach(transitions) { transition in
                         Button(transition.name) {
                             Task { await store.apply(transition, to: issue.key) }
                         }
                     }
-                } label: {
-                    Text(otherTransitions.isEmpty ? "No other moves" : "Move to...")
                 }
-                .menuStyle(.borderlessButton)
-                .controlSize(.small)
-                .disabled(otherTransitions.isEmpty || isBusy)
-                .fixedSize()
-
-                Spacer()
+            } label: {
+                Image(systemName: "arrow.right.circle")
+                    .font(.system(size: 12, weight: .medium))
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Move to another column")
+            .accessibilityLabel("Move this issue to another column")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
     }
 
-    private var hasDoneTransition: Bool {
-        transitions.contains { $0.landsInDone }
-    }
+    /// Every move the workflow allows right now, Done included. The server decides what is in
+    /// this list, so a workflow change needs no change here.
+    private var transitions: [JiraTransition] { store.transitionsByKey[issue.key] ?? [] }
 
-    private var otherTransitions: [JiraTransition] {
-        transitions.filter { !$0.landsInDone }
-    }
 }
 
 struct MetaChip: View {

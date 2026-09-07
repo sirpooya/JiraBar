@@ -12,6 +12,8 @@ import Observation
 final class IssueStore {
     private(set) var state: ContentState = .loading
     private(set) var accountName: String?
+    /// The username from /myself, which is what author matching uses.
+    private(set) var accountUsername: String?
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
     /// Keys with a transition in flight, so the row can show a spinner and refuse a second click.
@@ -21,10 +23,26 @@ final class IssueStore {
     /// Keys whose comments are being fetched, so the detail view can say so rather than looking
     /// like an issue with no discussion on it.
     private(set) var loadingComments: Set<String> = []
+    /// The composer's text. Shared so a pasted image can append its markup to whatever is typed.
+    var commentDraft: String = ""
+    /// Non-nil while an existing comment is being edited rather than a new one written.
+    private(set) var editingCommentID: String?
+    private(set) var isSubmittingComment = false
+    private(set) var isUploadingImage = false
+    /// Reactions per comment id. Absent means not loaded, or the endpoint is not available here.
+    private(set) var reactionsByComment: [String: [JiraReaction]] = [:]
+    /// The comment whose reaction picker is open, if any.
+    var pickingReactionFor: String?
     /// A failure from an action (moving an issue), which is separate from a failure to load.
     var actionError: String?
     /// The issue the detail view is showing, or nil for the list.
-    var selectedKey: String?
+    var selectedKey: String? {
+        didSet {
+            guard selectedKey != oldValue else { return }
+            commentDraft = ""
+            editingCommentID = nil
+        }
+    }
 
     /// The board's columns, read from the server. Empty until the first successful load.
     private(set) var columns: [BoardColumn] = []
@@ -66,12 +84,15 @@ final class IssueStore {
         self.session = session
         self.forcedState = forcedState
         self.accountName = defaults.string(forKey: Keys.accountDisplayName)
+        self.accountUsername = defaults.string(forKey: Keys.accountUsername)
         if let forcedState {
             self.state = forcedState
             // A forced state never talks to the server, so the dropdown would otherwise be empty
             // and the board scope could not be photographed.
-            self.columns = BoardColumn.fallback
+            self.columns = QCHooks.qcColumns
             self.commentsByKey = QCHooks.sampleComments
+            self.transitionsByKey = QCHooks.sampleTransitions
+            self.reactionsByComment = QCHooks.sampleReactions
         }
         restoreCachedBoard()
         if forcedState != nil { self.selectedKey = QCHooks.forcedSelection() }
@@ -137,11 +158,14 @@ final class IssueStore {
         scope = columns.first { $0.name == stored } ?? columns.first
     }
 
-    /// Reads the board's columns, in three steps, each a fallback for the one before:
+    /// Reads the board's columns from the server, two ways:
     ///   1. the pinned board id, which is the DDS board's own `rapidView` number,
-    ///   2. discovery by project key, in case the board was rebuilt and renumbered,
-    ///   3. the workflow statuses recorded in CLAUDE.md, for an instance that has the Agile API
-    ///      switched off and answers 404 rather than saying so.
+    ///   2. discovery by project key, in case the board was rebuilt and renumbered.
+    ///
+    /// If neither answers, `columns` stays empty and the popover says the board could not be
+    /// read. There is deliberately no hardcoded list to fall back on: one used to exist, built
+    /// from an older board's workflow, and it silently showed nine plausible columns that had
+    /// nothing to do with this board.
     func loadBoardColumns() async {
         guard forcedState == nil, let client else { return }
         var discovered: [BoardColumn] = []
@@ -154,7 +178,9 @@ final class IssueStore {
            let configuration = try? await client.boardConfiguration(id: board.id) {
             discovered = configuration.columns
         }
-        if discovered.isEmpty { discovered = BoardColumn.fallback }
+        // No fallback list. A guessed set of columns is indistinguishable from real board data
+        // on screen, which is the same failure mode as showing an empty list for an expired token.
+        guard !discovered.isEmpty else { return }
 
         columns = discovered
         if let data = try? JSONEncoder().encode(discovered) {
@@ -186,7 +212,7 @@ final class IssueStore {
         }
         if columns.isEmpty { await loadBoardColumns() }
         guard let column = scope else {
-            state = .failed("No columns could be read from the board.")
+            state = .failed("Could not read the columns of board \(boardID) in \(projectKey). Check that you can open the board in a browser.")
             return false
         }
 
@@ -245,7 +271,9 @@ final class IssueStore {
         do {
             let user = try await probe.myself()
             accountName = user.displayName
+            accountUsername = user.name
             defaults.set(user.displayName, forKey: Keys.accountDisplayName)
+            defaults.set(user.name, forKey: Keys.accountUsername)
             return .success(user)
         } catch let error as JiraError {
             return .failure(error)
@@ -256,7 +284,9 @@ final class IssueStore {
 
     func forgetAccount() {
         accountName = nil
+        accountUsername = nil
         defaults.removeObject(forKey: Keys.accountDisplayName)
+        defaults.removeObject(forKey: Keys.accountUsername)
         try? tokenStore.delete(for: baseURL)
         state = .needsToken
     }
@@ -281,6 +311,123 @@ final class IssueStore {
         // A failure here is not worth a whole error state: the description is still readable, so
         // the section just stays empty.
         commentsByKey[key] = (try? await client.comments(for: key)) ?? []
+        await loadReactions(for: key)
+    }
+
+    // MARK: - Reactions
+
+    /// Loads reactions for a whole thread. `/rest/internal/2` is Jira's own undocumented UI API,
+    /// so a failure here is silent: the chips just do not appear, and the thread still reads.
+    func loadReactions(for key: String) async {
+        guard forcedState == nil, let client else { return }
+        for comment in commentsByKey[key] ?? [] {
+            if let found = try? await client.reactions(issueKey: key, commentID: comment.id) {
+                reactionsByComment[comment.id] = found
+            }
+        }
+    }
+
+    /// Adds your reaction, or takes it back if it is already yours. Taking back your own reaction
+    /// is not the comment-delete Ticketbar refuses to have: it cannot touch anyone else's content.
+    func toggleReaction(_ emojiId: String, commentID: String, on key: String) async {
+        guard let client else { return }
+        let existing = reactionsByComment[commentID]?.first { $0.emojiId == emojiId }
+        let isMine = existing?.currentUserReacted == true
+
+        do {
+            if isMine {
+                try await client.removeReaction(emojiId, issueKey: key, commentID: commentID)
+            } else {
+                try await client.addReaction(emojiId, issueKey: key, commentID: commentID)
+            }
+            if let refreshed = try? await client.reactions(issueKey: key, commentID: commentID) {
+                reactionsByComment[commentID] = refreshed
+            }
+        } catch let error as JiraError {
+            actionError = Self.message(for: error)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Writing comments
+    //
+    // Add and edit only. There is no delete anywhere in this type, and there must never be one:
+    // deleting a comment is done in the browser, where it takes more than one stray click in a
+    // popover that opens under the cursor.
+
+    /// Which comments this user may edit. Jira decides for real, but offering Edit on somebody
+    /// else's comment only to have the server refuse it is a worse experience than not offering it.
+    func editableCommentIDs(for key: String) -> Set<String> {
+        let comments = commentsByKey[key] ?? []
+        // Username first. Display name is only a fallback for a server that omits the username,
+        // and it is unreliable: the same person reads as "Pouya Kamel" or "Pooya Kamel" depending
+        // on who transliterated it.
+        if let username = accountUsername, !username.isEmpty {
+            return Set(comments.filter { $0.author?.name == username }.map(\.id))
+        }
+        guard let displayName = accountName else { return [] }
+        return Set(comments.filter { $0.authorName == displayName }.map(\.id))
+    }
+
+    func beginCommentEdit(_ id: String, on key: String) {
+        guard let comment = commentsByKey[key]?.first(where: { $0.id == id }) else { return }
+        editingCommentID = id
+        // The raw wiki markup, not the rendered HTML: that is what Jira expects back.
+        commentDraft = comment.body ?? ""
+        actionError = nil
+    }
+
+    func cancelCommentEdit() {
+        editingCommentID = nil
+        commentDraft = ""
+    }
+
+    func submitComment(on key: String) async {
+        let text = commentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let client, !text.isEmpty, !isSubmittingComment else { return }
+
+        isSubmittingComment = true
+        actionError = nil
+        defer { isSubmittingComment = false }
+
+        do {
+            if let editing = editingCommentID {
+                try await client.updateComment(id: editing, body: text, on: key)
+            } else {
+                try await client.addComment(text, to: key)
+            }
+            commentDraft = ""
+            editingCommentID = nil
+            // Re-read rather than splicing the new comment in: the server owns the rendered body,
+            // the timestamps and the ordering.
+            commentsByKey[key] = nil
+            await loadComments(for: key)
+        } catch let error as JiraError {
+            actionError = Self.message(for: error)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Uploads a pasted screenshot and appends the wiki markup that shows it inline.
+    func attachPastedImage(_ data: Data, to key: String) async {
+        guard let client, !isUploadingImage else { return }
+        isUploadingImage = true
+        actionError = nil
+        defer { isUploadingImage = false }
+
+        let name = "ticketbar-\(Int(Date().timeIntervalSince1970)).png"
+        do {
+            let stored = try await client.attach(imageData: data, filename: name, to: key)
+            // Jira renders `!file.png|thumbnail!` as an inline thumbnail of the attachment.
+            let markup = "!\(stored)|thumbnail!"
+            commentDraft += commentDraft.isEmpty ? markup : "\n\(markup)"
+        } catch let error as JiraError {
+            actionError = Self.message(for: error)
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 
     /// Moves an issue to whichever transition lands in Jira's `done` category.

@@ -15,7 +15,11 @@ enum Keys {
     static let notifyOnNewIssue = "in.pooya.ticketbar.notifyOnNewIssue"
     static let showDescription = "in.pooya.ticketbar.showDescription"
     static let showComments = "in.pooya.ticketbar.showComments"
+    /// The status, type and priority chips plus the "updated" line in the detail view.
+    static let showMetadata = "in.pooya.ticketbar.showMetadata"
     static let accountDisplayName = "in.pooya.ticketbar.accountDisplayName"
+    /// The username from /myself. Used to decide which comments this user may edit.
+    static let accountUsername = "in.pooya.ticketbar.accountUsername"
     static let seenIssueKeys = "in.pooya.ticketbar.seenIssueKeys"
     static let seenSetSeeded = "in.pooya.ticketbar.seenSetSeeded"
     static let boardProjectKey = "in.pooya.ticketbar.boardProjectKey"
@@ -44,6 +48,7 @@ enum Keys {
             notifyOnNewIssue: true,
             showDescription: true,
             showComments: true,
+            showMetadata: true,
             seenSetSeeded: false,
             boardProjectKey: defaultProjectKey,
             boardID: defaultBoardID,

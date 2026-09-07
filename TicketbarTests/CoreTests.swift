@@ -220,18 +220,24 @@ final class BoardScopeTests: XCTestCase {
                        "project = DDS AND status in (10101, 10102) ORDER BY updated DESC")
     }
 
-    func testTheFallbackColumnsQueryByQuotedName() {
-        let column = BoardColumn(name: "Blocked / Rejected", statusNames: ["Blocked / Rejected"])
-        XCTAssertEqual(column.statusClause, "status in (\"Blocked / Rejected\")")
+    /// There must be no hardcoded column list. One used to exist, built from an older board's
+    /// workflow, and when the Agile API failed it showed nine plausible columns that had nothing
+    /// to do with board 95. A guessed list is indistinguishable from real data on screen, which is
+    /// the same failure mode as showing an empty list for an expired token.
+    func testColumnsCanOnlyBeBuiltFromStatusIDs() {
+        let column = BoardColumn(name: "\u{1F7E0} Working on it", statusIDs: ["3"])
+        XCTAssertEqual(column.statusClause, "status in (3)")
+        XCTAssertEqual(column.jql(projectKey: "DDS"),
+                       "project = DDS AND status in (3) ORDER BY updated DESC")
     }
 
-    /// The fallback list is what the dropdown offers when the Agile API is unavailable, so it has
-    /// to match the workflow statuses recorded in CLAUDE.md.
-    func testTheFallbackCoversEveryKnownWorkflowStatus() {
-        let names = Set(BoardColumn.fallback.map(\.name))
-        for expected in ["Sprint Backlog", "Planning Web", "Planning App", "In-Progress",
-                         "Storybook", "Testing", "Blocked / Rejected", "UAT", "Done"] {
-            XCTAssertTrue(names.contains(expected), "the dropdown would be missing \(expected)")
+    /// The QC fixture must be board 95 as the server reports it, not an older board's workflow.
+    func testTheQCFixtureMatchesTheRealBoard() {
+        XCTAssertEqual(QCHooks.qcColumns.map(\.name),
+                       ["Backlog", "To Do", "\u{1F7E0} Working on it", "\u{1F7E3} QC Ready",
+                        "\u{1F535} Testing", "\u{1F534} Rejected", "\u{1F7E2} Done"])
+        for column in QCHooks.qcColumns {
+            XCTAssertFalse(column.statusIDs.isEmpty, "\(column.name) has no status to query")
         }
     }
 
@@ -248,12 +254,19 @@ final class BoardScopeTests: XCTestCase {
         XCTAssertEqual(configuration.columns.map(\.name), ["Backlog", "Done"])
     }
 
-    /// Two columns must never share a seen-issue set.
-    func testSeenNamespacesAreDistinctPerColumn() {
-        XCTAssertEqual(BoardColumn(name: "In-Progress").seenNamespace, "in-progress")
-        XCTAssertEqual(BoardColumn(name: "Sprint Backlog").seenNamespace, "sprint-backlog")
-        XCTAssertNotEqual(BoardColumn(name: "UAT").seenNamespace,
-                          BoardColumn(name: "Testing").seenNamespace)
+    /// Two columns must never share a seen-issue set, and the real board names its columns with
+    /// emoji, which end up in UserDefaults keys.
+    func testSeenNamespacesAreDistinctAndASCII() {
+        XCTAssertEqual(BoardColumn(name: "To Do").seenNamespace, "to-do")
+        XCTAssertEqual(BoardColumn(name: "\u{1F7E0} Working on it").seenNamespace, "working-on-it")
+        XCTAssertEqual(BoardColumn(name: "\u{1F534} Rejected").seenNamespace, "rejected")
+        XCTAssertNotEqual(BoardColumn(name: "\u{1F535} Testing").seenNamespace,
+                          BoardColumn(name: "\u{1F7E3} QC Ready").seenNamespace)
+
+        for column in QCHooks.qcColumns {
+            XCTAssertTrue(column.seenNamespace.allSatisfy { $0.isASCII },
+                          "\(column.name) produced a non-ASCII defaults key")
+        }
     }
 
     /// Pinned from the board's own URL, rather than taking whichever board discovery returns first.
@@ -337,5 +350,171 @@ final class CommentTests: XCTestCase {
         Keys.registerDefaults(defaults)
         XCTAssertTrue(defaults.bool(forKey: Keys.showDescription))
         XCTAssertTrue(defaults.bool(forKey: Keys.showComments))
+    }
+}
+
+// MARK: - Comment authoring
+
+final class CommentAuthoringTests: XCTestCase {
+
+    private func comments() -> [JiraComment] {
+        let json = """
+        {"comments":[
+          {"id":"11","author":{"displayName":"Pooya Kamel"},"renderedBody":"<p>mine</p>",
+           "created":"2026-09-07T18:09:00.000+0330","updated":"2026-09-07T18:09:00.000+0330"},
+          {"id":"22","author":{"displayName":"Sara Ahmadi"},"renderedBody":"<p>theirs</p>",
+           "created":"2026-09-07T19:00:00.000+0330","updated":"2026-09-07T19:00:00.000+0330"}]}
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+    }
+
+    /// The rule the user called very important: Ticketbar can add and edit comments, never delete
+    /// one. A delete control in a popover that opens under the cursor is one stray click from
+    /// destroying somebody's comment, and Jira does not undo it.
+    func testTheRenderedThreadNeverOffersDelete() {
+        let html = JiraComment.composedHTML(comments(), editableIDs: ["11", "22"])
+        XCTAssertFalse(html.lowercased().contains("delete"))
+        XCTAssertFalse(html.contains("\(JiraComment.actionScheme)://delete"))
+    }
+
+    func testEditIsOfferedOnlyForTheGivenComments() {
+        let html = JiraComment.composedHTML(comments(), editableIDs: ["11"])
+        XCTAssertTrue(html.contains("\(JiraComment.actionScheme)://edit/11"))
+        XCTAssertFalse(html.contains("\(JiraComment.actionScheme)://edit/22"),
+                       "Edit must not appear on a comment the user cannot edit")
+    }
+
+    func testNoEditLinksWhenNothingIsEditable() {
+        XCTAssertFalse(JiraComment.composedHTML(comments()).contains("://edit/"))
+    }
+
+    /// Relative, never an absolute timestamp: "2 hours ago", not "07/Sep/26 9:09 PM".
+    func testTimesAreRelativeNotAbsolute() {
+        let now = JiraDateFormat.parseTimestamp("2026-09-07T21:09:00.000+0330")!
+        let html = JiraComment.composedHTML(comments(), now: now)
+        XCTAssertTrue(html.contains("ago"), "expected a relative time")
+        XCTAssertFalse(html.contains("07/Sep/26"))
+        XCTAssertFalse(html.contains("2026-09-07"))
+    }
+
+    /// A comment that was never edited often carries no `updated` field at all. Comparing a nil
+    /// `updated` against a real `created` marked every single comment as edited.
+    func testACommentWithNoUpdatedFieldIsNotMarkedEdited() {
+        let json = """
+        {"comments":[{"id":"1","author":{"displayName":"Sara"},"renderedBody":"<p>x</p>",
+          "created":"2026-09-07T18:09:00.000+0330"}]}
+        """.data(using: .utf8)!
+        let plain = try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+        XCTAssertFalse(JiraComment.composedHTML(plain).contains("edited"))
+    }
+
+    /// Jira marks an edited comment by moving `updated` past `created`.
+    func testAnEditedCommentSaysSo() {
+        let json = """
+        {"comments":[{"id":"1","author":{"displayName":"Pooya Kamel"},"renderedBody":"<p>x</p>",
+          "created":"2026-09-07T18:09:00.000+0330","updated":"2026-09-07T20:00:00.000+0330"}]}
+        """.data(using: .utf8)!
+        let edited = try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+        XCTAssertTrue(JiraComment.composedHTML(edited).contains("edited"))
+        XCTAssertFalse(JiraComment.composedHTML(comments()).contains("edited"))
+    }
+
+    /// The action scheme is intercepted by the web view, so it must never look like a real link.
+    func testTheActionSchemeIsNotAWebScheme() {
+        XCTAssertEqual(JiraComment.actionScheme, "ticketbar")
+        XCTAssertNotEqual(JiraComment.actionScheme, "https")
+    }
+
+    /// Every detail section is on by default; the switches exist to turn things off.
+    func testEveryDetailSectionDefaultsOn() {
+        let defaults = UserDefaults(suiteName: "ticketbar.tests.\(UUID().uuidString)")!
+        Keys.registerDefaults(defaults)
+        XCTAssertTrue(defaults.bool(forKey: Keys.showMetadata))
+        XCTAssertTrue(defaults.bool(forKey: Keys.showDescription))
+        XCTAssertTrue(defaults.bool(forKey: Keys.showComments))
+    }
+}
+
+// MARK: - Reactions
+
+final class ReactionTests: XCTestCase {
+
+    private func comments() -> [JiraComment] {
+        let json = """
+        {"comments":[{"id":"11","author":{"name":"p.kamel","displayName":"Pouya Kamel"},
+          "renderedBody":"<p>mine</p>","created":"2026-09-07T18:09:00.000+0330"}]}
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+    }
+
+    private func reactions() -> [JiraReaction] {
+        let json = """
+        {"reactions":[{"emojiId":"1f44d","count":2,"currentUserReacted":true},
+                      {"emojiId":"1f389","count":1,"currentUserReacted":false}]}
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(JiraReactionsResponse.self, from: json).reactions!
+    }
+
+    func testACodepointRendersAsItsEmoji() {
+        XCTAssertEqual(JiraReaction.emoji(for: "1f44d"), "\u{1F44D}")
+        XCTAssertEqual(JiraReaction.emojiId(for: "\u{1F44D}"), "1f44d")
+    }
+
+    /// An unknown or malformed codepoint must not crash or render as empty.
+    func testAnUnusableCodepointFallsBackToAVisibleGlyph() {
+        XCTAssertEqual(JiraReaction.emoji(for: nil), "\u{2753}")
+        XCTAssertEqual(JiraReaction.emoji(for: "not-hex"), "\u{2753}")
+    }
+
+    func testChipsRenderWithTheirCountAndAToggleLink() {
+        let html = JiraComment.composedHTML(comments(), reactions: ["11": reactions()])
+        XCTAssertTrue(html.contains("\u{1F44D} 2"))
+        XCTAssertTrue(html.contains("\u{1F389} 1"))
+        XCTAssertTrue(html.contains("\(JiraComment.actionScheme)://react/11/1f44d"))
+    }
+
+    /// Your own reaction is marked so it can be styled differently and read as "click to undo".
+    func testYourOwnReactionIsMarked() {
+        let html = JiraComment.composedHTML(comments(), reactions: ["11": reactions()])
+        XCTAssertTrue(html.contains("jr jrm"), "the reaction you added should carry the mine class")
+    }
+
+    func testThePickerIsAlwaysOffered() {
+        XCTAssertTrue(JiraComment.composedHTML(comments()).contains("\(JiraComment.actionScheme)://picker/11"))
+    }
+
+    /// Reactions with nobody behind them are not drawn.
+    func testEmptyReactionsAreNotDrawn() {
+        let json = """
+        {"reactions":[{"emojiId":"1f44d","count":0}]}
+        """.data(using: .utf8)!
+        let empty = try! JSONDecoder().decode(JiraReactionsResponse.self, from: json).reactions!
+        XCTAssertFalse(JiraComment.composedHTML(comments(), reactions: ["11": empty]).contains("\u{1F44D} 0"))
+    }
+
+    /// The endpoint is undocumented, so a shape this code does not expect must degrade to no
+    /// reactions rather than throwing and taking the whole comment thread with it.
+    func testAnUnexpectedShapeDecodesToNothingRatherThanThrowing() {
+        let json = """
+        {"somethingElse": true}
+        """.data(using: .utf8)!
+        let decoded = try? JSONDecoder().decode(JiraReactionsResponse.self, from: json)
+        XCTAssertNotNil(decoded)
+        XCTAssertNil(decoded?.reactions)
+    }
+
+    /// Still true with reactions on screen: add, edit and react, never delete a comment.
+    func testTheThreadStillNeverOffersCommentDelete() {
+        let html = JiraComment.composedHTML(comments(),
+                                            editableIDs: ["11"],
+                                            reactions: ["11": reactions()])
+        XCTAssertFalse(html.lowercased().contains("delete"))
+    }
+
+    func testThePaletteIsShortAndAllValid() {
+        XCTAssertEqual(JiraReaction.palette.count, 8)
+        for emoji in JiraReaction.palette {
+            XCTAssertNotNil(JiraReaction.emojiId(for: emoji), "\(emoji) has no codepoint")
+        }
     }
 }

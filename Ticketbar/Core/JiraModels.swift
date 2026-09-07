@@ -135,6 +135,9 @@ struct JiraComment: Decodable, Identifiable, Hashable {
     let updated: String?
 
     struct Author: Decodable, Hashable {
+        /// The username. Stable, unlike `displayName`, which differs by transliteration
+        /// ("Pouya" against "Pooya") and changes whenever somebody edits their profile.
+        let name: String?
         let displayName: String?
     }
 
@@ -154,17 +157,51 @@ struct JiraComment: Decodable, Identifiable, Hashable {
 }
 
 extension JiraComment {
+    /// The scheme the rendered thread uses to talk back to the app. `DescriptionWebView`
+    /// intercepts it; nothing with this scheme ever reaches the network.
+    static let actionScheme = "ticketbar"
+
     /// Composes every comment into one document: one web view for the whole thread instead of one
     /// per comment, which matters because a busy issue can carry twenty of them.
-    static func composedHTML(_ comments: [JiraComment], now: Date = Date()) -> String {
+    ///
+    /// Comments in `editableIDs` get an Edit link. There is deliberately NO delete link, and there
+    /// must never be one: deleting a comment is done in the browser, where it takes more than one
+    /// stray click in a popover that opens under the cursor.
+    static func composedHTML(_ comments: [JiraComment],
+                             editableIDs: Set<String> = [],
+                             reactions: [String: [JiraReaction]] = [:],
+                             now: Date = Date()) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
 
         return comments.map { comment in
             let when = comment.createdDate.map { formatter.localizedString(for: $0, relativeTo: now) } ?? ""
-            let meta = HTMLEscape.escape(comment.authorName)
-                + (when.isEmpty ? "" : " &middot; " + HTMLEscape.escape(when))
-            return "<div class=\"jc\"><div class=\"jcm\">\(meta)</div>\(comment.html)</div>"
+            var meta = HTMLEscape.escape(comment.authorName)
+            if !when.isEmpty { meta += " &middot; " + HTMLEscape.escape(when) }
+            // Both must be present and actually differ. A comment that was never edited often
+            // carries no `updated` at all, and nil != created would mark every one of them edited.
+            if let updated = comment.updated, let created = comment.created, updated != created {
+                meta += " &middot; edited"
+            }
+
+            // Reaction chips, then the picker, then Edit. Still no delete, ever.
+            var chips = (reactions[comment.id] ?? [])
+                .filter { $0.total > 0 }
+                .map { reaction -> String in
+                    let mine = reaction.currentUserReacted == true ? " jrm" : ""
+                    let id = reaction.emojiId ?? ""
+                    return "<a class=\"jr\(mine)\" href=\"\(actionScheme)://react/\(comment.id)/\(id)\">"
+                        + "\(reaction.emoji) \(reaction.total)</a>"
+                }
+                .joined()
+            chips += "<a class=\"jrp\" href=\"\(actionScheme)://picker/\(comment.id)\">&#x1F642;+</a>"
+
+            var actions = "<div class=\"jce\">\(chips)"
+            if editableIDs.contains(comment.id) {
+                actions += "<a class=\"jcl\" href=\"\(actionScheme)://edit/\(comment.id)\">Edit</a>"
+            }
+            actions += "</div>"
+            return "<div class=\"jc\"><div class=\"jcm\">\(meta)</div>\(comment.html)\(actions)</div>"
         }.joined()
     }
 }
@@ -178,6 +215,54 @@ enum HTMLEscape {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
+}
+
+// MARK: - Reactions
+
+/// Emoji reactions on a comment.
+///
+/// Server/DC serves these from `/rest/internal/2`, which is undocumented, so every field is
+/// optional and decoding never throws. If the shape is not what this expects, the reaction row
+/// is simply absent rather than taking the comment thread down with it.
+struct JiraReactionsResponse: Decodable {
+    let reactions: [JiraReaction]?
+}
+
+struct JiraReaction: Decodable, Identifiable, Hashable {
+    /// A unicode codepoint in hex, for example "1f44d" for a thumbs up.
+    let emojiId: String?
+    let count: Int?
+    let currentUserReacted: Bool?
+    let users: [ReactionUser]?
+
+    struct ReactionUser: Decodable, Hashable {
+        let name: String?
+        let displayName: String?
+    }
+
+    var id: String { emojiId ?? UUID().uuidString }
+
+    var total: Int { count ?? users?.count ?? 0 }
+
+    /// The codepoint rendered as the character it stands for.
+    var emoji: String { JiraReaction.emoji(for: emojiId) }
+
+    static func emoji(for id: String?) -> String {
+        guard let id, let value = UInt32(id.replacingOccurrences(of: "U+", with: ""), radix: 16),
+              let scalar = UnicodeScalar(value) else { return "\u{2753}" }
+        return String(Character(scalar))
+    }
+
+    /// Hex codepoint for an emoji character, which is what the endpoint wants back.
+    static func emojiId(for emoji: String) -> String? {
+        guard let scalar = emoji.unicodeScalars.first else { return nil }
+        return String(scalar.value, radix: 16)
+    }
+
+    /// The set offered by the picker. Deliberately short: a popover is not the place for a
+    /// full emoji keyboard, and these are what a tracker actually sees used.
+    static let palette = ["\u{1F44D}", "\u{1F44E}", "\u{1F389}", "\u{1F604}",
+                          "\u{1F440}", "\u{2764}\u{FE0F}", "\u{1F680}", "\u{1F914}"]
 }
 
 // MARK: - Transitions

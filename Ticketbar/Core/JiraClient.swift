@@ -94,6 +94,73 @@ struct JiraClient {
         try await post("/rest/api/2/issue/\(issueKey)/comment", body: ["body": text])
     }
 
+    /// Edits an existing comment. Jira allows this with edit-own or edit-all permission; the
+    /// server decides, and a refusal comes back as 403 and is shown as such.
+    func updateComment(id: String, body: String, on issueKey: String) async throws {
+        try await put("/rest/api/2/issue/\(issueKey)/comment/\(id)", body: ["body": body])
+    }
+
+    // MARK: - Reactions
+    //
+    // `/rest/internal/2` is Jira Server/DC's own UI API and is undocumented. Every call here is
+    // treated as optional: a failure means the reaction row does not appear, never an error state.
+
+    func reactions(issueKey: String, commentID: String) async throws -> [JiraReaction] {
+        let response = try await get("/rest/internal/2/issue/\(issueKey)/comment/\(commentID)/reactions",
+                                     query: [:], as: JiraReactionsResponse.self)
+        return response.reactions ?? []
+    }
+
+    func addReaction(_ emojiId: String, issueKey: String, commentID: String) async throws {
+        try await write("/rest/internal/2/issue/\(issueKey)/comment/\(commentID)/reaction/\(emojiId)",
+                        method: "PUT", body: [:])
+    }
+
+    /// Removes *your own* reaction. This is not the comment-delete that Ticketbar refuses to have:
+    /// it takes back something you added, and cannot touch anyone else's comment or reaction.
+    func removeReaction(_ emojiId: String, issueKey: String, commentID: String) async throws {
+        try await write("/rest/internal/2/issue/\(issueKey)/comment/\(commentID)/reaction/\(emojiId)",
+                        method: "DELETE", body: [:])
+    }
+
+    // There is deliberately NO deleteComment here, and there must never be one. Ticketbar can add
+    // and edit comments; deleting is done in the browser, on purpose, where it takes more than one
+    // click in a popover that opens under the cursor.
+
+    /// Uploads an image and returns the filename Jira stored it under, which is what the wiki
+    /// markup `!filename!` refers to.
+    ///
+    /// Attachments are the one endpoint that is not JSON: multipart, and Jira rejects the request
+    /// without `X-Atlassian-Token: no-check`, which is its XSRF guard for file uploads.
+    func attach(imageData: Data, filename: String, to issueKey: String) async throws -> String {
+        guard let token = tokenProvider(), !token.isEmpty else { throw JiraError.notConfigured }
+        let url = baseURL.appendingPathComponent("rest/api/2/issue/\(issueKey)/attachments")
+
+        let boundary = "ticketbar-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/png\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("no-check", forHTTPHeaderField: "X-Atlassian-Token")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = body
+
+        let data = try await send(request)
+        // The response is an array of the attachments created.
+        struct Attachment: Decodable { let filename: String }
+        guard let created = try? JSONDecoder().decode([Attachment].self, from: data).first else {
+            throw JiraError.decodingFailed("The image uploaded, but the server did not name it.")
+        }
+        return created.filename
+    }
+
     /// The browser URL for an issue, for the "Open in browser" link.
     func browseURL(for issueKey: String) -> URL {
         baseURL.appendingPathComponent("browse").appendingPathComponent(issueKey)
@@ -117,8 +184,16 @@ struct JiraClient {
     }
 
     private func post(_ path: String, body: [String: Any]) async throws {
+        try await write(path, method: "POST", body: body)
+    }
+
+    private func put(_ path: String, body: [String: Any]) async throws {
+        try await write(path, method: "PUT", body: body)
+    }
+
+    private func write(_ path: String, method: String, body: [String: Any]) async throws {
         let payload = try JSONSerialization.data(withJSONObject: body)
-        let request = try makeRequest(path: path, query: [:], method: "POST", body: payload)
+        let request = try makeRequest(path: path, query: [:], method: method, body: payload)
         _ = try await send(request)
     }
 

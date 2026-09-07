@@ -149,6 +149,19 @@ under a running process invalidates its code signature.
 - 2026-09-08 A whole comment thread is composed into **one** HTML document and shown in one
   `WKWebView`. One web view per comment does not belong in a popover. Author names and any raw
   markup are HTML-escaped: comments are other people's text going into a document.
+- 2026-09-08 **Ticketbar never deletes a Jira comment.** Add, edit and react only. There is no
+  `deleteComment` on the client, no delete link in the rendered thread, and a test asserts the
+  composed HTML contains no delete affordance. A delete control in a popover that opens under the
+  cursor is one stray click from destroying somebody's comment, and Jira does not undo it. Taking
+  back your own emoji reaction is not this: it cannot touch anyone else's content.
+- 2026-09-08 Comment authors are matched by **username**, never display name. The same person
+  reads as "Pouya Kamel" or "Pooya Kamel" depending on who transliterated it, and matching on the
+  display name silently removed the Edit link.
+- 2026-09-08 Reactions come from `/rest/internal/2/.../reactions`, which is Jira's own
+  undocumented UI API. Every field is optional and a failure is silent: the chips do not appear
+  and the thread still reads. NOT YET VERIFIED against works.digikala.com.
+- 2026-09-08 The detail header is the issue title. The key used to occupy that slot, which put a
+  reference number in the most prominent place on screen; it is still on the browser link.
 - 2026-09-08 The seen-issue set is **per column**, keyed by the column name. One shared set would
   turn every column switch into a notification storm, because the new column's issues have never
   been seen by the old column's set.

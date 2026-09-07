@@ -50,29 +50,15 @@ struct BoardConfiguration: Decodable {
 /// One selectable column.
 struct BoardColumn: Codable, Identifiable, Hashable {
     let name: String
-    /// Status ids, preferred: JQL accepts them and they survive a status being renamed.
+    /// Status ids, not names: JQL accepts them and they survive a status being renamed.
     var statusIDs: [String] = []
-    /// Names, used only by the fallback below when the Agile API is not available.
-    var statusNames: [String] = []
 
     var id: String { name }
 
     /// `status in (...)`, which is how a column that gathers several statuses is expressed.
     var statusClause: String {
-        if !statusIDs.isEmpty {
-            return "status in (" + statusIDs.joined(separator: ", ") + ")"
-        }
-        return "status in (" + statusNames.map { "\"\($0)\"" }.joined(separator: ", ") + ")"
+        "status in (" + statusIDs.joined(separator: ", ") + ")"
     }
-
-    /// Used when the Agile API is unavailable (some Server/DC instances lock it down, and it
-    /// answers 404 rather than saying so). These are the DDS workflow statuses recorded in
-    /// CLAUDE.md, one column each. Less accurate than the real board, and clearly better than
-    /// offering no columns at all.
-    static let fallback: [BoardColumn] = [
-        "Sprint Backlog", "Planning Web", "Planning App", "In-Progress",
-        "Storybook", "Testing", "Blocked / Rejected", "UAT", "Done",
-    ].map { BoardColumn(name: $0, statusNames: [$0]) }
 }
 
 /// The JQL for one column's issues.
@@ -83,7 +69,14 @@ extension BoardColumn {
 
     /// Namespaces this column's seen-issue set. Without it, switching columns would diff the new
     /// column's issues against the previous column's set and notify for every one of them.
+    ///
+    /// Reduced to ASCII letters, digits and dashes, because the real board names them with emoji
+    /// ("🟠 Working on it") and those become UserDefaults keys.
     var seenNamespace: String {
-        name.replacingOccurrences(of: " ", with: "-").lowercased()
+        let slug = name.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber ? character : "-"
+        }
+        let collapsed = String(slug).split(separator: "-", omittingEmptySubsequences: true)
+        return collapsed.isEmpty ? "column" : collapsed.joined(separator: "-")
     }
 }

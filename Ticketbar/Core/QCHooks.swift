@@ -33,6 +33,46 @@ enum QCHooks {
         #endif
     }
 
+    /// Board 95's real columns, as read from works.digikala.com on 2026-09-08. A fixture for the
+    /// forced-state builds only. The shipping path never substitutes a column list: if the board
+    /// cannot be read, the popover says so.
+    static let qcColumns: [BoardColumn] = [
+        BoardColumn(name: "Backlog", statusIDs: ["10108"]),
+        BoardColumn(name: "To Do", statusIDs: ["10004"]),
+        BoardColumn(name: "\u{1F7E0} Working on it", statusIDs: ["3"]),
+        BoardColumn(name: "\u{1F7E3} QC Ready", statusIDs: ["10013"]),
+        BoardColumn(name: "\u{1F535} Testing", statusIDs: ["10406"]),
+        BoardColumn(name: "\u{1F534} Rejected", statusIDs: ["10107"]),
+        BoardColumn(name: "\u{1F7E2} Done", statusIDs: ["10003"]),
+    ]
+
+    /// Fixture transitions, so the staged move control can be photographed. Named after board
+    /// 95's real columns.
+    static var sampleTransitions: [String: [JiraTransition]] {
+        let json = """
+        {"transitions":[
+          {"id":"11","name":"\u{1F7E3} QC Ready","to":{"name":"QC Ready","statusCategory":{"key":"indeterminate"}}},
+          {"id":"21","name":"\u{1F535} Testing","to":{"name":"Testing","statusCategory":{"key":"indeterminate"}}},
+          {"id":"31","name":"\u{1F534} Rejected","to":{"name":"Rejected","statusCategory":{"key":"new"}}},
+          {"id":"41","name":"\u{1F7E2} Done","to":{"name":"Done","statusCategory":{"key":"done"}}}]}
+        """.data(using: .utf8)!
+        guard let decoded = try? JSONDecoder().decode(JiraTransitionsResponse.self, from: json) else {
+            return [:]
+        }
+        return ["DDS-412": decoded.transitions]
+    }
+
+    /// Fixture reactions, so the chips can be photographed.
+    static var sampleReactions: [String: [JiraReaction]] {
+        let json = """
+        {"reactions":[{"emojiId":"1f44d","count":2,"currentUserReacted":true},
+                      {"emojiId":"1f389","count":1,"currentUserReacted":false}]}
+        """.data(using: .utf8)!
+        guard let decoded = try? JSONDecoder().decode(JiraReactionsResponse.self, from: json),
+              let list = decoded.reactions else { return [:] }
+        return ["1": list, "11": list]
+    }
+
     /// The issue the detail view should open on, for `--qc-state=detail`.
     static func forcedSelection(from arguments: [String] = CommandLine.arguments) -> String? {
         #if DEBUG
@@ -63,10 +103,10 @@ enum QCHooks {
 
     private static var sampleCommentsJSON: String { """
     {"comments": [
-      {"id": "1", "author": {"displayName": "Sara Ahmadi"},
+      {"id": "1", "author": {"name": "s.ahmadi", "displayName": "Sara Ahmadi"},
        "created": "\(timestamp(26))",
        "renderedBody": "<p>Snap radius of 8px feels tight on a 320px track. Can we make it proportional?</p>"},
-      {"id": "2", "author": {"displayName": "Pooya Kamel"},
+      {"id": "2", "author": {"name": "p.kamel", "displayName": "Pouya Kamel"},
        "created": "\(timestamp(4))",
        "renderedBody": "<p>Agreed. Using <code>max(8, trackWidth * 0.025)</code> instead.</p>"}
     ]}
@@ -100,7 +140,7 @@ enum QCHooks {
           "key": "DDS-412",
           "fields": {
             "summary": "Range slider magnet snap 🌐",
-            "status": {"id": "3", "name": "In-Progress", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
+            "status": {"id": "3", "name": "In Progress", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
             "priority": {"id": "2", "name": "High"},
             "issuetype": {"name": "Task", "subtask": false},
             "updated": "\(timestamp(2))",
@@ -117,7 +157,7 @@ enum QCHooks {
           "key": "DDS-407",
           "fields": {
             "summary": "Bottom sheet drag dismiss 📱",
-            "status": {"id": "1", "name": "Sprint Backlog", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
+            "status": {"id": "10108", "name": "Backlog", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
             "priority": {"id": "3", "name": "Medium"},
             "issuetype": {"name": "Story", "subtask": false},
             "updated": "\(timestamp(20))",
@@ -131,7 +171,7 @@ enum QCHooks {
           "key": "DDS-398",
           "fields": {
             "summary": "Token audit for elevation ramp",
-            "status": {"id": "5", "name": "UAT", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
+            "status": {"id": "10013", "name": "QC Ready", "statusCategory": {"key": "indeterminate", "colorName": "yellow"}},
             "priority": {"id": "4", "name": "Low"},
             "issuetype": {"name": "Task", "subtask": false},
             "updated": "\(timestamp(70))",
@@ -145,7 +185,7 @@ enum QCHooks {
           "key": "DDS-377",
           "fields": {
             "summary": "Chip group overflow rules 🌐",
-            "status": {"id": "6", "name": "Blocked / Rejected", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
+            "status": {"id": "10107", "name": "Rejected", "statusCategory": {"key": "new", "colorName": "blue-gray"}},
             "priority": {"id": "1", "name": "Highest"},
             "issuetype": {"name": "Bug", "subtask": false},
             "updated": "\(timestamp(150))",

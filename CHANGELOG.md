@@ -20,4 +20,14 @@ section when a release is cut.
 - Polling every 2 to 5 minutes, paused across sleep and backed off while the server is unreachable
 - Comments on an issue, rendered as Jira sends them, below the description in the detail view
 - Settings toggles to hide the description or the comments; hiding a section also stops it being fetched
+- Add and edit comments from the popover, including pasting a screenshot to attach it
+- Emoji reactions on comments, with a short picker per comment
+- Switches for the status chips, the description and the comments in the detail view
+
+### Changed
+- The issue title is now the detail header; the issue key moved to the browser link
+- One move control in the detail header instead of a Done button beside a separate Move menu
+
+### Fixed
+- Comments no longer all show as edited when the server sends no updated timestamp
 
