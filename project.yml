@@ -34,27 +34,34 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
-        # A stable signing identity keeps the Keychain ACL valid across rebuilds. An ad-hoc
-        # signature changes every build, and the ACL then re-prompts on every launch.
-        # Signing, the hard-won version. Three things had to be true at once:
+        # Signing decides whether the Keychain re-prompts for the login password on every launch.
+        # A Keychain item's ACL trusts the accessing app's DESIGNATED REQUIREMENT. Signed with a
+        # real certificate, that requirement is identifier + anchor + leaf CN, which every future
+        # rebuild still satisfies. Ad-hoc has no certificate, so the requirement can only be
+        # `cdhash H"..."`, one exact build, and the next build never matches again. Clicking
+        # "Always Allow" does not help there: it pins the build you clicked it on.
+        # VERIFY, do not assume. This was documented as decided while the build was still coming
+        # out ad-hoc, so the fix was never actually in effect:
+        #   codesign -dvvv <app> | grep -E 'Authority|flags'   # want an Authority, not flags=adhoc
+        #   codesign -d -r- <app>                              # want NO cdhash in the requirement
+        # Three things had to be true at once to get the certificate used:
         #   1. Manual, not Automatic: Automatic asks the developer portal for a "Mac Development"
         #      profile, which xcodebuild cannot mint headlessly.
         #   2. The identity given as its SHA-1 hash, not the name "Apple Development". By name,
         #      Xcode classifies it as the "Mac Development" certificate type and then reports that
         #      no such certificate exists, even though `codesign` signs with it happily. By hash it
         #      skips that classification.
-        #   3. DEVELOPMENT_TEAM still set: without it, manual signing refuses outright.
+        #   3. DEVELOPMENT_TEAM set: without it, manual signing refuses outright.
         # The hash is this Mac's "Apple Development: pooyak@live.com (FTQDQPMU3H)" certificate,
         # from `security find-identity -v -p codesigning`. On a different Mac it must be replaced.
-        # It is not ad-hoc on purpose: an ad-hoc signature changes every build, and the Keychain
-        # ACL then re-prompts for the token on every launch.
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: ADF79CA48A71BB7E096865C8778307573FC201B7
         PROVISIONING_PROFILE_SPECIFIER: ""
-        # DEVELOPMENT_TEAM is deliberately absent. Setting it makes Xcode hunt for a team-matched
-        # "Mac Development" provisioning profile, which this app does not need and xcodebuild
-        # cannot mint headlessly. The identity alone signs it, verified with `codesign`.
-        DEVELOPMENT_TEAM: FTQDQPMU3H
+        # The team id is the certificate's OU, which is what `codesign` reports as TeamIdentifier.
+        # It is NOT the id in the certificate's common name: that reads FTQDQPMU3H, and using it
+        # here was wrong. Nothing caught it because the identity is pinned by SHA-1 hash, so no
+        # team lookup ever ran, but it would break the moment signing moved to Automatic.
+        DEVELOPMENT_TEAM: 37MA269X54
         ENABLE_HARDENED_RUNTIME: YES
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -93,6 +100,8 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: ADF79CA48A71BB7E096865C8778307573FC201B7
         PROVISIONING_PROFILE_SPECIFIER: ""
-        DEVELOPMENT_TEAM: FTQDQPMU3H
+        # Must match the app target's team. A test bundle injected into a host signed under a
+        # different team fails at load with a "different Team IDs" dlopen error.
+        DEVELOPMENT_TEAM: 37MA269X54
     dependencies:
       - target: Ticketbar

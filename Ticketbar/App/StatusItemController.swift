@@ -14,6 +14,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let onOpenSettings: () -> Void
     private let onRefresh: () -> Void
+    private var isDetached = false
 
     init(store: IssueStore,
          onOpenSettings: @escaping () -> Void,
@@ -24,10 +25,15 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
+        self.isDetached = UserDefaults.standard.bool(forKey: Keys.detached)
+
         configureButton()
         configurePopover()
         updateIcon()
         observeStore()
+
+        // Reopen detached if that is how it was left.
+        if isDetached { openDetachedWindow() }
 
         NotificationCenter.default.addObserver(
             self,
@@ -55,15 +61,19 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.setAccessibilityLabel("Ticketbar")
     }
 
+    /// The one panel, built the same way whether it is hosted in the popover or in the detached
+    /// window, so the two can never drift apart.
+    private func makeRootView() -> AnyView {
+        AnyView(PopoverRootView(store: store,
+                                onOpenSettings: { [weak self] in self?.openSettings() },
+                                onRefresh: { [weak self] in self?.onRefresh() },
+                                onQuit: { NSApp.terminate(nil) },
+                                onToggleDetach: { [weak self] in self?.toggleDetach() },
+                                isDetached: isDetached))
+    }
+
     private func configurePopover() {
-        let hosting = NSHostingController(rootView: PopoverRootView(store: store,
-                                                                    onOpenSettings: { [weak self] in
-                                                                        self?.openSettings()
-                                                                    },
-                                                                    onRefresh: { [weak self] in
-                                                                        self?.onRefresh()
-                                                                    },
-                                                                    onQuit: { NSApp.terminate(nil) }))
+        let hosting = NSHostingController(rootView: makeRootView())
         // The panel grows with its content instead of being pinned to one guessed size.
         hosting.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hosting
@@ -83,11 +93,46 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func toggle() {
+        // Detached, the status item raises the window instead of opening a second copy of the
+        // same panel underneath it.
+        if isDetached {
+            openDetachedWindow()
+            return
+        }
         popover.isShown ? close() : show()
     }
 
+    // MARK: - Detaching
+
+    func toggleDetach() {
+        isDetached.toggle()
+        UserDefaults.standard.set(isDetached, forKey: Keys.detached)
+
+        if isDetached {
+            close()
+            openDetachedWindow()
+        } else {
+            DetachedWindow.shared.close()
+        }
+        // The popover keeps its own copy of the panel, so it has to be rebuilt with the new flag.
+        configurePopover()
+    }
+
+    private func openDetachedWindow() {
+        // An accessory app cannot take key focus, so the comment field would refuse first
+        // responder without this.
+        WindowActivation.claim()
+        DetachedWindow.shared.show(rootView: makeRootView()) { [weak self] in
+            guard let self, self.isDetached else { return }
+            // Closing the window is also a way of saying "put it back".
+            self.isDetached = false
+            UserDefaults.standard.set(false, forKey: Keys.detached)
+            self.configurePopover()
+        }
+    }
+
     func show() {
-        guard let button = statusItem.button else { return }
+        guard !isDetached, let button = statusItem.button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         // Without this the popover appears behind the frontmost app's windows when the status
         // item is clicked while another app is active.
@@ -130,6 +175,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func applicationDidResignActive() {
+        // Nothing to dismiss when detached: a window that vanished on focus loss would defeat the
+        // entire point of tearing it off.
+        guard !isDetached else { return }
         close()
     }
 

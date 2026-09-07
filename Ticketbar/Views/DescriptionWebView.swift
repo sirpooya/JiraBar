@@ -149,6 +149,20 @@ struct DescriptionWebView: NSViewRepresentable {
           .jc:first-child { border-top: none; padding-top: 0; }
           .jc:last-child { padding-bottom: 0; }
           .jcm { color: \(muted); font-size: 11px; margin-bottom: 3px; }
+          /* Comment bodies carry whatever inline sizes the Jira editor left in them, so one
+             comment can render at twice the size of the one above it. Size and line height are
+             normalised with !important, because those sizes are inline styles and nothing else
+             overrides them. Weight, style, colour, lists, tables and links are untouched: a bold
+             run stays bold, a heading stays a heading, it just stops being huge. */
+          .jc p, .jc li, .jc div, .jc span, .jc td, .jc th, .jc blockquote, .jc font,
+          .jc h1, .jc h2, .jc h3, .jc h4, .jc h5, .jc h6 {
+            font-size: 12.5px !important;
+            line-height: 1.5 !important;
+          }
+          .jc code, .jc tt, .jc pre, .jc pre * { font-size: 11px !important; }
+          /* Higher specificity than the rules above, so the byline and the action row keep their
+             own smaller size. */
+          .jc .jcm, .jc .jce, .jc .jce a { font-size: 11px !important; }
           /* Edit only. There is no delete control here by design. */
           .jce { margin-top: 5px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
           .jcl { font-size: 11px; color: \(muted); margin-left: 4px; }

@@ -149,6 +149,27 @@ under a running process invalidates its code signature.
 - 2026-09-08 A whole comment thread is composed into **one** HTML document and shown in one
   `WKWebView`. One web view per comment does not belong in a popover. Author names and any raw
   markup are HTML-escaped: comments are other people's text going into a document.
+- 2026-09-08 Comments are fetched `orderBy=-created`, newest first, which is the order the Jira
+  web UI shows them in. The composer sits **above** the thread so the box you type into and the
+  comment you just posted are next to each other rather than a scroll apart.
+- 2026-09-08 There is **one scroll area** in the detail view. Every `WKWebView` is sized to its
+  full content (`maxHeight` effectively uncapped) and the detail view's own `ScrollView` is the
+  only thing that scrolls. Capping a web view put a second scroller inside the first, and the
+  trackpad picked whichever it liked.
+- 2026-09-08 Comment bodies are forced to one font size with `!important`. Jira stores the sizes
+  the editor left behind as **inline styles**, so nothing weaker overrides them and one comment
+  renders at twice the size of the one above it. Only size and line height are normalised: weight,
+  style, colour, lists, tables and links stay exactly as the server sent them.
+- 2026-09-08 **No transition control on a list row.** A checkmark that moved an issue to Done on
+  one click, with no confirmation, in a popover that opens under the cursor, is an accident
+  waiting to happen. Moving an issue happens in the detail view, where you have opened the thing
+  you are about to change. A row is two lines: column pill, platform tag and due date, then the
+  title. No issue key: it is a reference number, not something to read.
+- 2026-09-08 The panel can be **detached** into a floating window (`Keys.detached`, persisted). It
+  is a plain `NSWindow`, never an `NSPanel`: `WindowActivation` derives the activation policy from
+  the titled non-panel windows on screen, so a panel leaves the app `.accessory` and the comment
+  field refuses first responder. While detached the status item raises the window instead of
+  opening a second copy of the same panel underneath it.
 - 2026-09-08 **Ticketbar never deletes a Jira comment.** Add, edit and react only. There is no
   `deleteComment` on the client, no delete link in the rendered thread, and a test asserts the
   composed HTML contains no delete affordance. A delete control in a popover that opens under the

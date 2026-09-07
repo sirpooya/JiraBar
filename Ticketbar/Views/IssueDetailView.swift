@@ -259,7 +259,7 @@ struct IssueDetailView: View {
                     }
                 }
             } label: {
-                Image(systemName: "arrow.right.circle")
+                Image(systemName: "rectangle.3.group")
                     .font(.system(size: 12, weight: .medium))
             }
             .menuStyle(.borderlessButton)

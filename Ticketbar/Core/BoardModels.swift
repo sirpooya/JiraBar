@@ -67,6 +67,10 @@ extension BoardColumn {
         "project = \(projectKey) AND \(statusClause) ORDER BY updated DESC"
     }
 
+    /// True when the column gathers more than one status, so a row's own status still says
+    /// something. In a single-status column every row would just repeat the dropdown above it.
+    var gathersMultipleStatuses: Bool { statusIDs.count > 1 }
+
     /// Namespaces this column's seen-issue set. Without it, switching columns would diff the new
     /// column's issues against the previous column's set and notify for every one of them.
     ///

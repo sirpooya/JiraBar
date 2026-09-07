@@ -23,11 +23,21 @@ section when a release is cut.
 - Add and edit comments from the popover, including pasting a screenshot to attach it
 - Emoji reactions on comments, with a short picker per comment
 - Switches for the status chips, the description and the comments in the detail view
+- Detach the panel into a floating window that stays put instead of closing when it loses focus
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
 - One move control in the detail header instead of a Done button beside a separate Move menu
+- Comments are listed newest first, with the composer above the thread
+- Comment text renders at one size regardless of the inline sizes Jira stored, keeping bold, colour and structure
+- List rows show the column, platform and due date over the title, without the issue key
+
+### Removed
+- The one-click Done button on list rows; moving an issue now happens in the detail view
 
 ### Fixed
 - Comments no longer all show as edited when the server sends no updated timestamp
+- The issue key is back on each row in the popover list, leading the status and platform pills
+- The detail view had two nested scroll areas competing for the trackpad
+- The Keychain no longer asks for your login password on every launch. The app was ad-hoc signed, which gave it a new code identity on each rebuild, and a Keychain item only trusts the exact identity that created it.
 

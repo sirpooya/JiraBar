@@ -2,40 +2,39 @@ import SwiftUI
 
 struct IssueRowView: View {
     let issue: JiraIssue
-    let isBusy: Bool
     let onSelect: () -> Void
-    let onDone: () -> Void
 
     @State private var isHovering = false
 
+    // There is deliberately no Done button on a row. It used to sit here as a checkmark that
+    // transitioned the issue on a single click, with no confirmation, in a popover that opens
+    // under the cursor. Moving an issue now happens in the detail view, where you have opened the
+    // thing you are about to change.
+
     var body: some View {
         Button(action: onSelect) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(issue.key)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        if let platform = issue.platform {
-                            PlatformPill(platform: platform)
-                        }
-                        Spacer(minLength: 0)
-                        DueBadge(due: issue.dueDate)
-                    }
-                    Text(issue.cleanSummary)
-                        // Medium, not regular: the summary is what the row is about, and beside a
-                        // bold monospaced key at .secondary a regular weight reads as the quieter
-                        // of the two.
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                // Two lines, not three: key, status and platform share one metadata line above the
+                // title. The key leads it, because it is the thing you quote to somebody else.
+                HStack(spacing: 6) {
+                    Text(issue.key)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
                     StatusPill(name: issue.statusName,
                                categoryKey: issue.fields.status?.statusCategory?.key)
+                    if let platform = issue.platform {
+                        PlatformPill(platform: platform)
+                    }
+                    Spacer(minLength: 0)
+                    DueBadge(due: issue.dueDate)
                 }
 
-                doneButton
+                Text(issue.cleanSummary)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -48,25 +47,6 @@ struct IssueRowView: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel("\(issue.key), \(issue.cleanSummary), \(issue.statusName)")
-    }
-
-    @ViewBuilder
-    private var doneButton: some View {
-        if isBusy {
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 22, height: 22)
-        } else {
-            Button(action: onDone) {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(isHovering ? Color.accentColor : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 22, height: 22)
-            .help("Move to Done")
-            .accessibilityLabel("Move \(issue.key) to Done")
-        }
     }
 }
 

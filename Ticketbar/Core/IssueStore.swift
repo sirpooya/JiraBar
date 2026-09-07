@@ -433,16 +433,6 @@ final class IssueStore {
         }
     }
 
-    /// Moves an issue to whichever transition lands in Jira's `done` category.
-    func markDone(_ key: String) async {
-        if transitionsByKey[key] == nil { await loadTransitions(for: key) }
-        guard let done = transitionsByKey[key]?.first(where: { $0.landsInDone }) else {
-            actionError = "This issue has no transition to Done from \(issue(for: key)?.statusName ?? "its current status")."
-            return
-        }
-        await apply(done, to: key)
-    }
-
     func apply(_ transition: JiraTransition, to key: String) async {
         guard let client, !busyKeys.contains(key) else { return }
 

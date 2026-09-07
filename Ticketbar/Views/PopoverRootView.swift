@@ -5,6 +5,9 @@ struct PopoverRootView: View {
     let onOpenSettings: () -> Void
     let onRefresh: () -> Void
     let onQuit: () -> Void
+    /// Tears the popover off into a floating window, or puts it back.
+    let onToggleDetach: () -> Void
+    let isDetached: Bool
 
     private static let width: CGFloat = 380
 
@@ -76,6 +79,14 @@ struct PopoverRootView: View {
                     .help("Refresh now")
                     .accessibilityLabel("Refresh now")
                 }
+
+                Button(action: onToggleDetach) {
+                    Image(systemName: isDetached ? "pip.exit" : "pip.enter")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .help(isDetached ? "Put it back in the menu bar" : "Detach into a floating window")
+                .accessibilityLabel(isDetached ? "Return to the menu bar" : "Detach into a window")
 
                 Button(action: onOpenSettings) {
                     Image(systemName: "gearshape").font(.system(size: 11, weight: .medium))
@@ -161,9 +172,11 @@ struct PopoverRootView: View {
                 Text("Not updated yet")
             }
             Spacer(minLength: 4)
-            Button("Quit", action: onQuit)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+            if !isDetached {
+                Button("Quit", action: onQuit)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)
@@ -195,13 +208,9 @@ struct IssueListView: View {
                 LazyVStack(spacing: 1) {
                     ForEach(issues) { issue in
                         IssueRowView(issue: issue,
-                                     isBusy: store.busyKeys.contains(issue.key),
                                      onSelect: {
                                          store.actionError = nil
                                          store.selectedKey = issue.key
-                                     },
-                                     onDone: {
-                                         Task { await store.markDone(issue.key) }
                                      })
                     }
                 }
