@@ -1,0 +1,98 @@
+# XcodeGen spec. This file is the source of truth; Ticketbar.xcodeproj is generated with
+# `xcodegen generate` and gitignored.
+name: Ticketbar
+options:
+  bundleIdPrefix: in.pooya
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+schemes:
+  Ticketbar:
+    build:
+      targets:
+        Ticketbar: all
+        TicketbarTests: [test]
+    test:
+      targets:
+        - TicketbarTests
+
+targets:
+  Ticketbar:
+    type: application
+    platform: macOS
+    sources:
+      - path: Ticketbar
+    settings:
+      base:
+        PRODUCT_NAME: Ticketbar
+        PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        # A stable signing identity keeps the Keychain ACL valid across rebuilds. An ad-hoc
+        # signature changes every build, and the ACL then re-prompts on every launch.
+        # Signing, the hard-won version. Three things had to be true at once:
+        #   1. Manual, not Automatic: Automatic asks the developer portal for a "Mac Development"
+        #      profile, which xcodebuild cannot mint headlessly.
+        #   2. The identity given as its SHA-1 hash, not the name "Apple Development". By name,
+        #      Xcode classifies it as the "Mac Development" certificate type and then reports that
+        #      no such certificate exists, even though `codesign` signs with it happily. By hash it
+        #      skips that classification.
+        #   3. DEVELOPMENT_TEAM still set: without it, manual signing refuses outright.
+        # The hash is this Mac's "Apple Development: pooyak@live.com (FTQDQPMU3H)" certificate,
+        # from `security find-identity -v -p codesigning`. On a different Mac it must be replaced.
+        # It is not ad-hoc on purpose: an ad-hoc signature changes every build, and the Keychain
+        # ACL then re-prompts for the token on every launch.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: ADF79CA48A71BB7E096865C8778307573FC201B7
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        # DEVELOPMENT_TEAM is deliberately absent. Setting it makes Xcode hunt for a team-matched
+        # "Mac Development" provisioning profile, which this app does not need and xcodebuild
+        # cannot mint headlessly. The identity alone signs it, verified with `codesign`.
+        DEVELOPMENT_TEAM: FTQDQPMU3H
+        ENABLE_HARDENED_RUNTIME: YES
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          # A dev build and the installed release coexist, each with its own defaults and its own
+          # Keychain item, so testing does not clobber the real token.
+          PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar.debug
+    info:
+      path: Ticketbar/Info.plist
+      properties:
+        CFBundleDisplayName: Ticketbar
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # Menu-bar only: no Dock tile. The app runs .accessory and flips to .regular only while a
+        # real titled window is open.
+        LSUIElement: true
+        NSHumanReadableCopyright: ""
+    entitlements:
+      path: Ticketbar/Ticketbar.entitlements
+      properties:
+        # Off. The app talks to an internal host over the VPN and writes a Keychain item; the
+        # sandbox buys nothing here and complicates the Keychain ACL across rebuilds.
+        com.apple.security.app-sandbox: false
+
+  TicketbarTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: TicketbarTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ticketbar.app/Contents/MacOS/Ticketbar"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: ADF79CA48A71BB7E096865C8778307573FC201B7
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        DEVELOPMENT_TEAM: FTQDQPMU3H
+    dependencies:
+      - target: Ticketbar

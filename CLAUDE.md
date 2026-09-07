@@ -102,6 +102,12 @@ under a running process invalidates its code signature.
   these into "no issues" is the single worst bug this app can have.
 - 2026-09-02 The seen-issue set is seeded silently on first run in an explicit step, not as a side
   effect of the first fetch, so the existing backlog never notifies.
+- 2026-09-02 Signing is Manual, with `CODE_SIGN_IDENTITY` given as the certificate SHA-1 hash
+  and `DEVELOPMENT_TEAM` still set. By name, "Apple Development" is classified as the
+  "Mac Development" certificate type and xcodebuild reports it missing, though `codesign` uses it
+  fine. Automatic signing wants a profile it cannot mint headlessly, and dropping the team makes
+  manual signing refuse. Ad-hoc was rejected: its signature changes every build, so the Keychain
+  ACL re-prompts for the token on every launch. The hash is this Mac's; another Mac needs its own.
 - 2026-09-02 The PAT is never logged, never printed in an error message, and never written to
   UserDefaults, a plist or a crash report. Redact the `Authorization` header in any request dump.
 

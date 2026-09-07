@@ -1,0 +1,229 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @Bindable var store: IssueStore
+    let notifications: NotificationService
+    let onRefresh: () -> Void
+
+    @AppStorage(Keys.baseURL) private var baseURLText = Keys.defaultBaseURL
+    @AppStorage(Keys.pollMinutes) private var pollMinutes = 3
+    @AppStorage(Keys.monochromeIcon) private var monochromeIcon = false
+    @AppStorage(Keys.showBadgeCount) private var showBadgeCount = true
+    @AppStorage(Keys.notifyOnNewIssue) private var notifyOnNewIssue = true
+
+    /// The paste field. It is never populated from the Keychain: the stored token has no reason
+    /// to travel back into a view, and a field that shows it is a field that can be copied out of.
+    @State private var pastedToken = ""
+    @State private var isTesting = false
+    @State private var testResult: TestResult?
+    @State private var launchAtLogin = false
+    @State private var launchAtLoginMessage: String?
+
+    private enum TestResult: Equatable {
+        case success(String)
+        case failure(String)
+    }
+
+    var body: some View {
+        SettingsTabBody {
+            accountSection
+            refreshSection
+            menuBarSection
+            notificationsSection
+            generalSection
+        }
+        .onAppear {
+            launchAtLogin = LaunchAtLogin.isEnabled
+        }
+    }
+
+    // MARK: - Account
+
+    private var accountSection: some View {
+        SettingsSection("Jira Account",
+                        footnote: "Personal Access Tokens expire, often after 90 days. When yours does, Ticketbar says so instead of showing an empty list.") {
+            SettingsFieldRow(title: "Server",
+                             placeholder: Keys.defaultBaseURL,
+                             text: $baseURLText,
+                             monospaced: true)
+            SettingsDivider()
+
+            SettingsRow("Personal Access Token",
+                        subtitle: store.hasToken
+                            ? "A token is stored in your Keychain. Paste a new one to replace it."
+                            : "Create one in Jira, then paste it here.") {
+                SecureField("Paste token", text: $pastedToken)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .font(.system(size: 11, design: .monospaced))
+                    .frame(maxWidth: SettingsMetrics.controlWidth)
+            }
+            SettingsDivider()
+
+            SettingsBlock {
+                HStack(spacing: 8) {
+                    Button("Create a Token...") {
+                        if let url = tokenPageURL { NSWorkspace.shared.open(url) }
+                    }
+                    .controlSize(.small)
+                    .disabled(tokenPageURL == nil)
+
+                    Button(isTesting ? "Testing..." : "Test and Save") {
+                        Task { await test() }
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isTesting || (pastedToken.isEmpty && !store.hasToken))
+
+                    if store.hasToken {
+                        Button("Sign Out") {
+                            store.forgetAccount()
+                            pastedToken = ""
+                            testResult = nil
+                        }
+                        .controlSize(.small)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+
+            if let testResult {
+                SettingsDivider()
+                SettingsBlock {
+                    switch testResult {
+                    case .success(let name):
+                        Label("Connected as \(name)", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    case .failure(let message):
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private var tokenPageURL: URL? {
+        parsedBaseURL?.appendingPathComponent("secure/ViewProfile.jspa")
+    }
+
+    private var parsedBaseURL: URL? {
+        let trimmed = baseURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme != nil, url.host != nil else { return nil }
+        return url
+    }
+
+    /// Validate, then store. The token only reaches the Keychain once the server has confirmed it
+    /// works, so a typo cannot quietly replace a working token with a broken one.
+    private func test() async {
+        guard let baseURL = parsedBaseURL else {
+            testResult = .failure("That server address is not a valid URL.")
+            return
+        }
+        let candidate = pastedToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = candidate.isEmpty ? store.tokenStore.token(for: baseURL) : candidate
+        guard let token, !token.isEmpty else {
+            testResult = .failure("Paste a token first.")
+            return
+        }
+
+        isTesting = true
+        defer { isTesting = false }
+
+        switch await store.verifyToken(baseURL: baseURL, token: token) {
+        case .success(let user):
+            if !candidate.isEmpty {
+                do {
+                    try store.tokenStore.save(candidate, for: baseURL)
+                } catch {
+                    testResult = .failure("The token works, but it could not be saved to the Keychain.")
+                    return
+                }
+            }
+            pastedToken = ""
+            testResult = .success(user.displayName)
+            // Asked for here and nowhere else: after the app has proved it can reach the server.
+            await notifications.requestAuthorizationIfNeeded()
+            onRefresh()
+        case .failure(let error):
+            testResult = .failure(Self.message(for: error, host: baseURL.host ?? "the server"))
+        }
+    }
+
+    /// Test failures get the same three-way distinction the popover makes, for the same reason.
+    private static func message(for error: JiraError, host: String) -> String {
+        switch error {
+        case .tokenRejected:
+            return "\(host) rejected that token. It may have expired or been revoked."
+        case .hostUnreachable(let reason):
+            return "\(reason) \(host) is internal, so check the VPN."
+        case .tlsFailure(let reason):
+            return reason
+        case .notFound:
+            return "That address answered, but it is not a Jira REST API. Check the server URL."
+        case .badRequest(let message), .decodingFailed(let message), .unexpected(let message):
+            return message
+        case .serverError(let code):
+            return "\(host) answered \(code)."
+        case .notConfigured:
+            return "Paste a token first."
+        }
+    }
+
+    // MARK: - Other sections
+
+    private var refreshSection: some View {
+        SettingsSection("Refresh",
+                        footnote: "Jira Server cannot push to a Mac, so Ticketbar polls. Polling stops while this Mac sleeps and while the server is unreachable.") {
+            SettingsRow("Check every") {
+                Picker("", selection: $pollMinutes) {
+                    ForEach(Array(Keys.pollMinutesRange), id: \.self) { minutes in
+                        Text("\(minutes) minutes").tag(minutes)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(width: 130)
+            }
+        }
+    }
+
+    private var menuBarSection: some View {
+        SettingsSection("Menu Bar") {
+            SettingsRow("Show the issue count") {
+                SettingsSwitch(isOn: $showBadgeCount)
+            }
+            SettingsDivider()
+            SettingsRow("Monochrome icon",
+                        subtitle: "Uses the menu bar's own color instead of the status colors, which turn orange when something is due today and red when something is overdue.") {
+                SettingsSwitch(isOn: $monochromeIcon)
+            }
+        }
+    }
+
+    private var notificationsSection: some View {
+        SettingsSection("Notifications",
+                        footnote: "On first launch the issues already assigned to you are recorded silently, so the existing backlog never arrives as a wall of notifications.") {
+            SettingsRow("Notify me about newly assigned issues") {
+                SettingsSwitch(isOn: $notifyOnNewIssue)
+            }
+        }
+    }
+
+    private var generalSection: some View {
+        SettingsSection("General", footnote: launchAtLoginMessage) {
+            SettingsRow("Launch at login") {
+                SettingsSwitch(isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        launchAtLoginMessage = LaunchAtLogin.set(enabled)
+                        // Write back what macOS actually did, not what was asked for.
+                        launchAtLogin = LaunchAtLogin.isEnabled
+                    }
+            }
+        }
+    }
+}
