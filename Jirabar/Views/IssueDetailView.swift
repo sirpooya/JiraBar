@@ -156,10 +156,14 @@ struct IssueDetailView: View {
                 StatusPill(name: issue.statusName,
                            categoryKey: issue.fields.status?.statusCategory?.key)
                 if let type = issue.fields.issuetype?.name {
-                    MetaChip(text: type)
+                    JiraIconChip(assetName: JiraIconAsset.name(forIconURL: issue.fields.issuetype?.iconUrl,
+                                                               kind: .issueType),
+                                 text: type)
                 }
                 if let priority = issue.fields.priority?.name {
-                    MetaChip(text: priority)
+                    JiraIconChip(assetName: JiraIconAsset.name(forIconURL: issue.fields.priority?.iconUrl,
+                                                               kind: .priority),
+                                 text: priority)
                 }
                 DueBadge(due: issue.dueDate)
             }
@@ -408,6 +412,28 @@ struct IssueDetailView: View {
     /// this list, so a workflow change needs no change here.
     private var transitions: [JiraTransition] { store.transitionsByKey[issue.key] ?? [] }
 
+}
+
+/// A chip that leads with Jira's own icon for the thing it names, and falls back to the plain
+/// text chip when that icon is not one of the bundled ones.
+struct JiraIconChip: View {
+    let assetName: String?
+    let text: String
+
+    var body: some View {
+        if let assetName, NSImage(named: assetName) != nil {
+            HStack(spacing: 4) {
+                Image(assetName)
+                    .resizable()
+                    .frame(width: 12, height: 12)
+                Text(text)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            MetaChip(text: text)
+        }
+    }
 }
 
 struct MetaChip: View {

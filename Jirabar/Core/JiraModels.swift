@@ -74,6 +74,8 @@ struct JiraIssue: Decodable, Identifiable, Hashable {
         let id: String?
         let name: String
         let statusCategory: StatusCategory?
+        /// Present on priority: the icon Jira itself draws for it. See `JiraIconAsset`.
+        let iconUrl: String?
     }
 
     struct StatusCategory: Decodable, Hashable {

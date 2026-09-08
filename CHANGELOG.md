@@ -30,6 +30,7 @@ section when a release is cut.
 - A two-finger swipe right across an issue's header goes back to the column list
 - Swipe across the header with two fingers to move between board columns
 - An app icon, built from an Icon Composer bundle
+- An issue's Component/s, Labels, Story Points and Affects Version/s under the header
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -46,6 +47,9 @@ section when a release is cut.
 - The menu bar icon is now the diamond mark, from a bundled PNG cropped to its own artwork. It still tints to the bar in monochrome mode and still carries the urgency color when colors are on.
 - The detach control is a pin, filled while the panel is pinned open
 - The app is now called Jirabar. Your saved token and every setting carry over, because the rename left the underlying storage identifiers alone
+- Issue type and priority show Jira's own icons instead of plain text chips
+- An issue title stays on one line and ends in an ellipsis rather than being clipped
+- The move menu names each destination exactly as the board names that column, with no added emoji
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view

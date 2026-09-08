@@ -396,6 +396,32 @@ final class DecodingTests: XCTestCase {
                        "empty Affects Version/s is dropped, and Summary is not a side panel field")
     }
 
+    /// The icon is chosen from the URL the server gives, not from the display name, which is
+    /// renamed and translated per instance.
+    func testTheIconIsPickedFromTheURLJiraReports() {
+        XCTAssertEqual(JiraIconAsset.name(forIconURL: "https://works.digikala.com/images/icons/priorities/medium.svg",
+                                          kind: .priority),
+                       "priority-medium")
+        XCTAssertEqual(JiraIconAsset.name(forIconURL: "/images/icons/issuetypes/story.svg",
+                                          kind: .issueType),
+                       "issuetype-story")
+        XCTAssertEqual(JiraIconAsset.name(forIconURL: "/images/icons/priorities/High.SVG?v=2",
+                                          kind: .priority),
+                       "priority-high",
+                       "the case and a cache busting query must not change which file it is")
+    }
+
+    /// An instance serving PNG avatars for its issue types has no bundled match, and the chip
+    /// falls back to plain text rather than showing nothing.
+    func testAnIconWeDoNotHaveYieldsNothingToDraw() {
+        XCTAssertNil(JiraIconAsset.name(forIconURL: nil, kind: .priority))
+        XCTAssertNil(JiraIconAsset.name(forIconURL: "", kind: .issueType))
+        XCTAssertEqual(JiraIconAsset.name(forIconURL: "/secure/viewavatar?avatarId=10318",
+                                          kind: .issueType),
+                       "issuetype-viewavatar",
+                       "a name we have no asset for is still returned; the view checks the bundle")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {
