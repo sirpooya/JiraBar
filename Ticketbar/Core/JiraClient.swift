@@ -42,12 +42,31 @@ struct JiraClient {
     func search(jql: String, maxResults: Int = 50) async throws -> [JiraIssue] {
         let query: [String: String] = [
             "jql": jql,
-            "fields": "summary,description,status,priority,issuetype,updated,duedate,parent,customfield_10411",
+            "fields": "summary,description,status,priority,issuetype,updated,duedate,parent,assignee,customfield_10411",
             "expand": "renderedFields",
             "maxResults": String(maxResults),
         ]
         let response = try await get("/rest/api/2/search", query: query, as: JiraSearchResponse.self)
         return response.issues
+    }
+
+    /// One user's avatar, as image bytes.
+    ///
+    /// Fetched here rather than by the view, because on a private instance the avatar sits behind
+    /// the same bearer token as every other call and an unauthenticated load returns a login page
+    /// or a stranger's default image. The host is checked first: the token goes to the Jira host
+    /// and nowhere else, whatever URL the server happens to hand back.
+    func avatar(at url: URL) async throws -> Data {
+        guard let host = url.host, host == baseURL.host else {
+            throw JiraError.unexpected("That avatar is not on the Jira host.")
+        }
+        guard let token = tokenProvider(), !token.isEmpty else { throw JiraError.notConfigured }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        return try await send(request)
     }
 
     // MARK: - Agile board

@@ -21,6 +21,12 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
   so the artifact is `Ticketbar.app`.
 
 ## Status
+2026-09-08 (latest): the detail view is one scroll area, rows carry the key and the assignee's
+avatar, the composer grows to five lines and flips to right to left for Persian, `Cmd+V` works at
+all now, and two separate crash loops are fixed (see the `sizingOptions` and defaults observer
+decisions). 84 tests green. QC note: Accessibility is not granted to the VS Code host on this Mac,
+so `mac-qc` cannot drive or photograph the UI; grant it before trusting any screenshot claim.
+
 2026-09-08 (late): comments, comment authoring, emoji reactions and the detached window landed.
 The detail view is now title, optional metadata, optional description, then the comment thread
 newest first with the composer above it. Rows lost their one-click Done. 79 tests green.
@@ -226,6 +232,57 @@ under a running process invalidates its code signature.
   been seen by the old column's set.
 - 2026-09-02 The PAT is never logged, never printed in an error message, and never written to
   UserDefaults, a plist or a crash report. Redact the `Authorization` header in any request dump.
+
+- 2026-09-08 A row shows the issue key, and shows the status pill **only when the selected column
+  gathers more than one status** (`BoardColumn.gathersMultipleStatuses`). Every column on board 95
+  maps to exactly one status, so the pill was repeating the dropdown above the list. The key was
+  briefly removed from the row and put back: it is the string you quote to another person.
+- 2026-09-08 The assignee's avatar sits at the trailing edge of a row, vertically centred across
+  both lines. It is fetched through `JiraClient.avatar(at:)`, never `AsyncImage`: on this instance
+  the avatar is behind the same bearer token as everything else, and an unauthenticated load
+  returns a login page. That call **refuses any URL whose host is not the base URL's**, so the
+  token cannot follow a redirect off the Jira host. No avatar shows the person's initials, no
+  assignee shows a neutral person glyph, so the trailing column stays aligned down the list.
+- 2026-09-08 **`NSHostingController.sizingOptions` must stay empty for the detached window.**
+  With `.preferredContentSize` the SwiftUI content resized the window, and this content changes
+  height as it loads (description, comment thread, growing composer). Each change resized the
+  window from inside AppKit's layout pass, the resize made `NSHostingView` invalidate and mark
+  constraints dirty again, and AppKit aborts that loop with `NSGenericException`: "more Update
+  Constraints in Window passes than there are views in the window". The app crashed on every
+  launch it was left detached in. The window owns its size; the panel fills it.
+- 2026-09-08 **Nothing may touch AppKit synchronously from `UserDefaults.didChangeNotification`.**
+  It fires for every key in the domain, AppKit writes to that domain itself when a window persists
+  an autosaved frame, and it is posted from inside whatever wrote. Setting the status button's
+  image there marked the status bar window as needing constraints during its own layout pass, with
+  the same exception as above. The observer compares the values the icon actually depends on and
+  defers the redraw by a run loop turn.
+- 2026-09-08 The panel is 380 points wide in the popover, which sizes to its content, and fills
+  the window in both directions when detached, with 380 as the floor. Pinned to 380 it sat in a
+  window dragged out to 572 with a wide empty margin beside it.
+- 2026-09-08 **An `LSUIElement` app still needs a main menu.** AppKit routes the standard editing
+  shortcuts through it, so with no main menu `Cmd+V` reached nothing: pasting into the composer or
+  the token field did nothing, and `PastingTextView.paste(_:)`, where a pasted screenshot is
+  intercepted, was never called. A text view builds its own contextual menu, so right-click Paste
+  worked, which made this look like an image-only bug. The menu is never seen; it exists so the
+  shortcuts work.
+- 2026-09-08 Right-to-left text is decided by the text, per element, never globally. The composer
+  sets its base writing direction from the draft's **first strong character**
+  (`TextDirection.firstStrong`), and each comment's byline and body carry `dir="auto"`. Digits and
+  punctuation are skipped: a Persian numbered list starts "1- ", and counting that digit as strong
+  laid the whole line out backwards. Without this, Persian rendered in the document's
+  left-to-right base direction, which reorders the runs and reads as scrambled.
+- 2026-09-08 A rendered block (description or comment thread) reports its own height from the page
+  through a `ResizeObserver`, and its web view forwards the scroll wheel to its container
+  (`NonScrollingWebView`). A single height measured at load came in short, and WKWebView answered
+  by scrolling internally: the thread slid under the composer while the detail view's own scroller
+  sat untouched. The detail view has exactly one scroll area.
+- 2026-09-08 The detach control is `macwindow` and `menubar.rectangle`, not the picture in picture
+  pair, which borrowed a video metaphor for a window. Verify any SF Symbol name against the system
+  list before shipping it: a misspelled name renders as nothing and the build still succeeds.
+- 2026-09-08 **Comment times are not wrong when they disagree with Jira's web UI.** Jira renders
+  them in the Jira profile's timezone, this app uses the Mac's clock, and both describe the same
+  instant. `08/Sep/26 7:37 AM` in Jira is 11:07 in Tehran, so "2 minutes ago" at 11:09 is correct.
+  The offset in `2026-09-02T11:04:33.000+0330` is parsed, not dropped.
 
 ## Privacy (local-first)
 No telemetry, no analytics, no account. Network calls, exhaustively: `works.digikala.com` (or

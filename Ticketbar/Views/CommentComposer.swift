@@ -34,7 +34,15 @@ extension NSImage {
 
 struct CommentEditor: NSViewRepresentable {
     @Binding var text: String
+    /// Reported back as the text is laid out, so the box is as tall as what has been typed.
+    @Binding var height: CGFloat
     var onPasteImage: (Data) -> Void
+
+    /// One line, and the height the composer sits at when the draft is empty.
+    static let restingHeight: CGFloat = 29
+    /// After this the text view scrolls. A composer that keeps growing would push the thread it
+    /// belongs to off the bottom of a popover that is only 340 points tall to begin with.
+    static let maxVisibleLines = 5
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = PastingTextView()
@@ -60,18 +68,69 @@ struct CommentEditor: NSViewRepresentable {
         textView.onPasteImage = onPasteImage
         // Only when it differs, or every keystroke would reset the insertion point to the end.
         if textView.string != text { textView.string = text }
+        context.coordinator.applyDirection(textView)
+        // Measured here as well as on every keystroke, because the draft also changes from outside
+        // the text view: starting an edit loads an existing comment, which is often several lines,
+        // and submitting one empties the box again.
+        context.coordinator.remeasure(textView)
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, height: $height) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         private let text: Binding<String>
+        private let height: Binding<CGFloat>
 
-        init(text: Binding<String>) { self.text = text }
+        init(text: Binding<String>, height: Binding<CGFloat>) {
+            self.text = text
+            self.height = height
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
+            applyDirection(textView)
+            remeasure(textView)
+        }
+
+        /// Lays the box out in the direction the draft is actually written in, from its own first
+        /// strong character. A draft that starts in Persian gets a right-to-left paragraph and
+        /// sits against the right edge; one that starts in English is unchanged. Until a strong
+        /// character is typed the box keeps whatever direction it had, so it does not flip about
+        /// while somebody types a number or a bullet.
+        func applyDirection(_ textView: NSTextView) {
+            guard let direction = TextDirection.firstStrong(in: textView.string) else { return }
+            let isRTL = direction == .rightToLeft
+            let writing: NSWritingDirection = isRTL ? .rightToLeft : .leftToRight
+            let alignment: NSTextAlignment = isRTL ? .right : .left
+            guard textView.baseWritingDirection != writing || textView.alignment != alignment else {
+                return
+            }
+            textView.baseWritingDirection = writing
+            textView.alignment = alignment
+        }
+
+        /// Grows with the wrapped text rather than with the number of typed newlines: a long
+        /// sentence that wraps onto a third line is three lines, which is what the eye counts.
+        func remeasure(_ textView: NSTextView) {
+            guard let container = textView.textContainer,
+                  let layoutManager = textView.layoutManager else { return }
+            layoutManager.ensureLayout(for: container)
+
+            let inset = textView.textContainerInset.height * 2
+            let line = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: 12))
+            let ceiling = CommentEditor.restingHeight
+                + line * CGFloat(CommentEditor.maxVisibleLines - 1)
+            let fitted = min(max(layoutManager.usedRect(for: container).height + inset,
+                                 CommentEditor.restingHeight),
+                             ceiling)
+
+            // Deferred: this runs inside a SwiftUI update pass when it comes from updateNSView,
+            // and writing to the binding there would be a mutation mid-render.
+            DispatchQueue.main.async {
+                guard abs(self.height.wrappedValue - fitted) > 0.5 else { return }
+                self.height.wrappedValue = fitted
+            }
         }
     }
 }
@@ -80,6 +139,8 @@ struct CommentEditor: NSViewRepresentable {
 struct CommentComposer: View {
     @Bindable var store: IssueStore
     let issueKey: String
+
+    @State private var editorHeight: CGFloat = CommentEditor.restingHeight
 
     private var isEditing: Bool { store.editingCommentID != nil }
 
@@ -93,11 +154,12 @@ struct CommentComposer: View {
                     .foregroundStyle(.secondary)
             }
 
-            CommentEditor(text: $store.commentDraft) { data in
+            CommentEditor(text: $store.commentDraft, height: $editorHeight) { data in
                 Task { await store.attachPastedImage(data, to: issueKey) }
             }
-            // Half what it was: one line is the common case, and it grows by scrolling.
-            .frame(height: 29)
+            // One line at rest, taller as lines are typed, and scrolling past five. It used to be
+            // pinned at one line, so anything longer than a sentence was written through a slot.
+            .frame(height: editorHeight)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.primary.opacity(0.06)))

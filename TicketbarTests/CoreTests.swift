@@ -137,6 +137,58 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(list[0].blockingFieldNames, ["Resolution"])
     }
 
+    func testAssigneeDecodesAndPrefersTheLargestAvatar() {
+        let json = """
+        {"total":1,"issues":[{"id":"1","key":"DDS-479","fields":{"summary":"Rating Scale Control",
+         "assignee":{"name":"pooya","displayName":"Pouya Kamel","avatarUrls":{
+           "16x16":"https://works.digikala.com/secure/useravatar?size=xsmall&ownerId=pooya",
+           "48x48":"https://works.digikala.com/secure/useravatar?ownerId=pooya"}}}}]}
+        """.data(using: .utf8)!
+        let issues = try! JSONDecoder().decode(JiraSearchResponse.self, from: json).issues
+        let assignee = issues[0].fields.assignee
+
+        XCTAssertEqual(assignee?.name, "pooya")
+        XCTAssertEqual(assignee?.avatarURL?.absoluteString,
+                       "https://works.digikala.com/secure/useravatar?ownerId=pooya",
+                       "a 20 point circle is 40 pixels on retina, so the largest source wins")
+    }
+
+    /// Unassigned is a normal state on this board, not a malformed response.
+    func testAnUnassignedIssueStillDecodes() {
+        let json = """
+        {"total":1,"issues":[{"id":"2","key":"DDS-403","fields":{"summary":"Floating Bottom Sheet"}}]}
+        """.data(using: .utf8)!
+        let issues = try! JSONDecoder().decode(JiraSearchResponse.self, from: json).issues
+        XCTAssertNil(issues[0].fields.assignee)
+    }
+
+    /// The fallback drawn until the image arrives, and instead of it when there is none.
+    func testInitialsComeFromTheDisplayName() {
+        func user(_ name: String) -> JiraUser {
+            let json = "{\"displayName\":\"\(name)\"}".data(using: .utf8)!
+            return try! JSONDecoder().decode(JiraUser.self, from: json)
+        }
+        XCTAssertEqual(user("Pouya Kamel").initials, "PK")
+        XCTAssertEqual(user("Pooya").initials, "P")
+        XCTAssertEqual(user("").initials, "?")
+    }
+
+    func testTextDirectionComesFromTheFirstStrongCharacter() {
+        XCTAssertEqual(TextDirection.firstStrong(in: "\u{0633}\u{0644}\u{0627}\u{0645}"), .rightToLeft)
+        XCTAssertEqual(TextDirection.firstStrong(in: "Hello"), .leftToRight)
+        XCTAssertEqual(TextDirection.firstStrong(in: "Hello \u{0633}\u{0644}\u{0627}\u{0645}"),
+                       .leftToRight)
+    }
+
+    /// A numbered Persian list starts with a digit. Counting that as strong would lay the whole
+    /// line out backwards, so weak characters are skipped.
+    func testDigitsAndPunctuationDoNotDecideDirection() {
+        XCTAssertEqual(TextDirection.firstStrong(in: "1- \u{0633}\u{0644}\u{0627}\u{0645}"),
+                       .rightToLeft)
+        XCTAssertNil(TextDirection.firstStrong(in: "123 -- ..."))
+        XCTAssertNil(TextDirection.firstStrong(in: ""))
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

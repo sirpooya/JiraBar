@@ -2,6 +2,7 @@ import SwiftUI
 
 struct IssueRowView: View {
     let issue: JiraIssue
+    @Bindable var store: IssueStore
     /// False when the selected column maps to a single status, because then every row would carry
     /// the same pill the dropdown above the list already shows.
     let showsStatus: Bool
@@ -16,30 +17,38 @@ struct IssueRowView: View {
 
     var body: some View {
         Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 4) {
-                // Two lines, not three: key, status and platform share one metadata line above the
-                // title. The key leads it, because it is the thing you quote to somebody else.
-                HStack(spacing: 6) {
-                    Text(issue.key)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    if showsStatus {
-                        StatusPill(name: issue.statusName,
-                                   categoryKey: issue.fields.status?.statusCategory?.key)
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Two lines, not three: key, status and platform share one metadata line
+                    // above the title. The key leads it, because it is the thing you quote to
+                    // somebody else.
+                    HStack(spacing: 6) {
+                        Text(issue.key)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        if showsStatus {
+                            StatusPill(name: issue.statusName,
+                                       categoryKey: issue.fields.status?.statusCategory?.key)
+                        }
+                        if let platform = issue.platform {
+                            PlatformPill(platform: platform)
+                        }
+                        Spacer(minLength: 0)
+                        DueBadge(due: issue.dueDate)
                     }
-                    if let platform = issue.platform {
-                        PlatformPill(platform: platform)
-                    }
-                    Spacer(minLength: 0)
-                    DueBadge(due: issue.dueDate)
-                }
 
-                Text(issue.cleanSummary)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(issue.cleanSummary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Trailing, and centred on the row rather than on either line: the avatar answers
+                // "whose is this", which belongs to the whole row and not to the metadata line.
+                AssigneeAvatar(user: issue.fields.assignee, store: store)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -51,7 +60,67 @@ struct IssueRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel("\(issue.key), \(issue.cleanSummary), \(issue.statusName)")
+        .accessibilityLabel(accessibilityDescription)
+    }
+}
+
+extension IssueRowView {
+    fileprivate var accessibilityDescription: String {
+        var parts = [issue.key, issue.cleanSummary, issue.statusName]
+        if let assignee = issue.fields.assignee {
+            parts.append("assigned to \(assignee.displayName)")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// The assignee, as Jira draws them: a small circle at the trailing edge of the row.
+///
+/// The image is fetched through the client rather than by the view, because on a private instance
+/// it sits behind the same token as everything else. Until it arrives, and if it never does, the
+/// circle holds the assignee's initials.
+struct AssigneeAvatar: View {
+    /// Nil for an unassigned issue, which draws the placeholder rather than nothing: the trailing
+    /// slot stays the same width down the list instead of the rows jostling.
+    let user: JiraUser?
+    @Bindable var store: IssueStore
+
+    private let side: CGFloat = 20
+    private var avatarKey: String? { user?.avatarURL?.absoluteString }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Color.primary.opacity(0.09))
+            content
+        }
+        .frame(width: side, height: side)
+        .clipShape(Circle())
+        .help(user?.displayName ?? "Unassigned")
+        .accessibilityLabel(user.map { "Assigned to \($0.displayName)" } ?? "Unassigned")
+        .task(id: avatarKey) {
+            guard let user else { return }
+            await store.loadAvatar(for: user)
+        }
+    }
+
+    /// Three cases, in order of how much they say: the picture, the person's initials, and a
+    /// generic head for an issue nobody owns. Plenty of Jira accounts have never had an avatar
+    /// uploaded, so the initials are a normal outcome rather than a failure.
+    @ViewBuilder
+    private var content: some View {
+        if let user, let data = store.avatar(for: user), let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if let user {
+            Text(user.initials)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.secondary)
+        } else {
+            Image(systemName: "person.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
     }
 }
 
@@ -89,11 +158,15 @@ struct PlatformPill: View {
                 .font(.system(size: 8, weight: .semibold))
             Text(platform.label)
                 .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(Capsule().fill(Color.primary.opacity(0.07)))
+        // Never squeezed: given less room than it needs, the label wrapped mid-word and the
+        // capsule turned into a two-line blob beside the title.
+        .fixedSize()
     }
 }
 

@@ -14,7 +14,7 @@ struct PopoverRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let key = store.selectedKey, let issue = store.issue(for: key) {
-                IssueDetailView(issue: issue, store: store) {
+                IssueDetailView(issue: issue, store: store, fillsHeight: isDetached) {
                     store.selectedKey = nil
                     store.actionError = nil
                 }
@@ -27,7 +27,17 @@ struct PopoverRootView: View {
                 footer
             }
         }
-        .frame(width: Self.width)
+        // In the popover the size is the content's: a popover has no frame of its own to fill,
+        // so the width is pinned and the scroll areas are capped.
+        //
+        // In the detached window it is the other way round. The window's size is the user's, and
+        // the panel fills it in both directions, with 380 as the floor. Pinned to 380 the panel
+        // sat in a window dragged out to 572 with a wide empty margin beside it, and navigating
+        // between the list and an issue changed nothing about the window, only what was stranded
+        // inside it.
+        .frame(minWidth: Self.width,
+               maxWidth: isDetached ? .infinity : Self.width,
+               maxHeight: isDetached ? .infinity : nil)
     }
 
     /// Shown only under `--qc-state=...`. Loud on purpose: fixture issues look exactly like real
@@ -81,7 +91,10 @@ struct PopoverRootView: View {
                 }
 
                 Button(action: onToggleDetach) {
-                    Image(systemName: isDetached ? "pip.exit" : "pip.enter")
+                    // Not the picture-in-picture pair, which borrows a video metaphor for a
+                    // window. Each icon names its own destination: a window to tear off into,
+                    // the menu bar to go back to.
+                    Image(systemName: isDetached ? "menubar.rectangle" : "macwindow")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.plain)
@@ -140,7 +153,7 @@ struct PopoverRootView: View {
             LoadingView()
 
         case .issues(let issues):
-            IssueListView(issues: issues, store: store)
+            IssueListView(issues: issues, store: store, fillsHeight: isDetached)
 
         case .empty:
             EmptyIssuesView(onRefresh: onRefresh)
@@ -188,6 +201,7 @@ struct PopoverRootView: View {
 struct IssueListView: View {
     let issues: [JiraIssue]
     @Bindable var store: IssueStore
+    var fillsHeight = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -208,6 +222,7 @@ struct IssueListView: View {
                 LazyVStack(spacing: 1) {
                     ForEach(issues) { issue in
                         IssueRowView(issue: issue,
+                                     store: store,
                                      showsStatus: store.scope?.gathersMultipleStatuses ?? false,
                                      onSelect: {
                                          store.actionError = nil
@@ -218,9 +233,9 @@ struct IssueListView: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 5)
             }
-            // Tall enough for roughly five rows; longer lists scroll rather than growing a
-            // popover past the bottom of the screen.
-            .frame(maxHeight: 380)
+            // Roughly five rows in the popover, which cannot be allowed to grow past the bottom
+            // of the screen. In the detached window the list takes the height the window has.
+            .frame(maxHeight: fillsHeight ? .infinity : 380)
         }
     }
 }

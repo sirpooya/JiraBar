@@ -24,6 +24,9 @@ section when a release is cut.
 - Emoji reactions on comments, with a short picker per comment
 - Switches for the status chips, the description and the comments in the detail view
 - Detach the panel into a floating window that stays put instead of closing when it loses focus
+- The assignee's avatar on the trailing side of each issue row, fetched with your token and falling back to their initials
+- A placeholder in the avatar slot for an unassigned issue, and initials for anyone who has never uploaded an avatar
+- The comment box lays itself out right to left when the draft starts in Persian, and back again when it starts in English
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -32,6 +35,9 @@ section when a release is cut.
 - Comment text renders at one size regardless of the inline sizes Jira stored, keeping bold, colour and structure
 - List rows show the issue key, platform and due date over the title
 - Rows no longer repeat the column's status: the pill shows only when a board column gathers more than one status
+- The comment box grows with what you type, up to five lines, then scrolls
+- The add-a-reaction control is a neutral outline icon, not a smiling face that looked like a reaction you had already added
+- The detach control shows a window icon, and a menu bar icon to put it back, instead of the picture-in-picture pair
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -39,4 +45,9 @@ section when a release is cut.
 ### Fixed
 - Comments no longer all show as edited when the server sends no updated timestamp
 - The detail view had two nested scroll areas competing for the trackpad
+- The comment thread no longer scrolls inside its own box under a stuck composer: the detail view is one scroll area, and the rendered thread reports its height as it lays out
+- Persian and other right-to-left comments read in their own direction instead of being reordered by the document's left-to-right base direction
+- The app no longer crashes while running: a window saving its frame triggered a menu bar icon redraw inside AppKit's layout pass, which AppKit aborts on
+- The detached window keeps its size when you move between the column list and an issue, and the content fills it instead of being capped at popover height
+- The platform pill no longer wraps mid-word when the header is tight
 

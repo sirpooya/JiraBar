@@ -2,11 +2,31 @@ import Foundation
 
 // MARK: - Account
 
-struct JiraUser: Decodable, Equatable {
+struct JiraUser: Decodable, Hashable {
     let name: String?
     let displayName: String
     let emailAddress: String?
     let active: Bool?
+    /// Keyed by pixel size: "16x16", "24x24", "32x32", "48x48". Server/DC serves these from
+    /// `/secure/useravatar`, on the Jira host and behind the same auth as everything else.
+    let avatarUrls: [String: String]?
+
+    /// The largest sensible source for a small circle. An 18 point avatar is 36 pixels on a
+    /// retina display, so the 24 pixel image is the one that visibly softens.
+    var avatarURL: URL? {
+        for size in ["48x48", "32x32", "24x24", "16x16"] {
+            if let raw = avatarUrls?[size], let url = URL(string: raw) { return url }
+        }
+        return nil
+    }
+
+    /// Drawn while the image loads, and instead of it when there is none. Initials from the
+    /// display name, which is the only name a Jira user is guaranteed to have.
+    var initials: String {
+        let words = displayName.split(separator: " ").filter { !$0.isEmpty }
+        let letters = words.prefix(2).compactMap { $0.first }
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
 }
 
 // MARK: - Search
@@ -33,12 +53,15 @@ struct JiraIssue: Decodable, Identifiable, Hashable {
         let updated: String?
         let duedate: String?
         let parent: Parent?
+        /// Nil for an unassigned issue, which is a normal state on this board rather than an error.
+        let assignee: JiraUser?
         /// Tech Area. A Jira select field, so it arrives as an object with a `value`, but the
         /// same field can be a bare string or an array depending on how it was configured.
         let techArea: CustomFieldValue?
 
         private enum CodingKeys: String, CodingKey {
             case summary, description, status, priority, issuetype, updated, duedate, parent
+            case assignee
             case techArea = "customfield_10411"
         }
     }
@@ -194,16 +217,30 @@ extension JiraComment {
                         + "\(reaction.emoji) \(reaction.total)</a>"
                 }
                 .joined()
-            chips += "<a class=\"jrp\" href=\"\(actionScheme)://picker/\(comment.id)\">&#x1F642;+</a>"
+            chips += "<a class=\"jrp\" href=\"\(actionScheme)://picker/\(comment.id)\" "
+                + "title=\"Add a reaction\">\(addReactionGlyph)</a>"
 
             var actions = "<div class=\"jce\">\(chips)"
             if editableIDs.contains(comment.id) {
                 actions += "<a class=\"jcl\" href=\"\(actionScheme)://edit/\(comment.id)\">Edit</a>"
             }
             actions += "</div>"
-            return "<div class=\"jc\"><div class=\"jcm\">\(meta)</div>\(comment.html)\(actions)</div>"
+            // `dir="auto"` on the byline and on the body, separately: direction is resolved per
+            // element from its own first strong character, so a Persian comment reads right to
+            // left and an English one beside it is unaffected. Without it both render in the
+            // document's left-to-right base direction, which reorders the runs of a Persian
+            // sentence and makes it look scrambled to anyone who reads Persian.
+            return "<div class=\"jc\"><div class=\"jcm\" dir=\"auto\">\(meta)</div>"
+                + "<div class=\"jcb\" dir=\"auto\">\(comment.html)</div>\(actions)</div>"
         }.joined()
     }
+
+    /// A neutral outline, not an emoji. This used to be a literal slightly-smiling face, which sat
+    /// in the same row as the real reaction chips and read as a reaction somebody had already
+    /// added. Jira's own control is a plain monochrome icon for the same reason.
+    private static let addReactionGlyph = """
+    <svg class="jrpi" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.9" cy="8.4" r="5.3"     fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.1" cy="7" r="0.85"     fill="currentColor"/><circle cx="8.7" cy="7" r="0.85" fill="currentColor"/><path     d="M4.6 10.1c0.6 0.9 1.4 1.3 2.3 1.3s1.7-0.4 2.3-1.3" fill="none" stroke="currentColor"     stroke-width="1.3" stroke-linecap="round"/><path d="M13 1.6v3.5M11.25 3.35h3.5"     stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    """
 }
 
 /// Author names and any raw markup are other people's text going into an HTML document, so they

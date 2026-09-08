@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         })
         poller.start()
 
+        installMainMenu()
         observeSleepAndWake()
         observeDefaults()
 
@@ -53,6 +54,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !store.hasToken {
             showSettings()
         }
+    }
+
+    // MARK: - Main menu
+
+    /// An accessory app shows no menu bar, and this one had no main menu at all. AppKit routes the
+    /// standard editing shortcuts through the main menu, so with none there `Cmd+V` reached
+    /// nothing: pasting into the comment composer or the token field did exactly nothing, and the
+    /// text view's own `paste(_:)`, which is where a pasted screenshot is intercepted, was never
+    /// called. Right-clicking for the contextual menu worked, because a text view builds that one
+    /// itself, which is what made this look like an image-only problem.
+    ///
+    /// The menu is never seen. It exists so the shortcuts work.
+    private func installMainMenu() {
+        let main = NSMenu()
+
+        // AppKit treats the first submenu as the application menu, so Edit has to come second to
+        // land where the shortcuts expect it.
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit Ticketbar",
+                        action: #selector(NSApplication.terminate(_:)),
+                        keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        // Written as bare selector names rather than #selector: these live on NSText, NSTextView
+        // and the undo manager's responder, and naming a type here would only pick one of them.
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: Selector(("cut:")), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: Selector(("copy:")), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: Selector(("paste:")), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+
+        NSApp.mainMenu = main
     }
 
     // MARK: - Sleep and wake
@@ -73,11 +115,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The icon reacts to its two settings without needing a restart.
+    /// The two defaults the menu bar icon is drawn from. Everything else the icon depends on,
+    /// the badge count and the urgency colour, comes from the store through `observeStore`.
+    private struct IconSettings: Equatable {
+        let monochrome: Bool
+        let showCount: Bool
+
+        init(_ defaults: UserDefaults) {
+            monochrome = defaults.bool(forKey: Keys.monochromeIcon)
+            showCount = defaults.bool(forKey: Keys.showBadgeCount)
+        }
+    }
+
+    private var iconSettings: IconSettings?
+
     private func observeDefaults() {
+        iconSettings = IconSettings(UserDefaults.standard)
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
                                                object: UserDefaults.standard,
                                                queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.statusItemController.updateIcon() }
+            MainActor.assumeIsolated { self?.iconSettingsMayHaveChanged() }
+        }
+    }
+
+    /// Two guards, both of which this crashed without.
+    ///
+    /// `didChangeNotification` fires for every key in the domain, not just the ones asked for,
+    /// and AppKit itself writes to that domain: a window with a frame autosave name persists its
+    /// frame as it lays out. So the values are compared first, and a write the icon does not
+    /// depend on does no work at all.
+    ///
+    /// Then the update is deferred by a turn of the run loop, because the notification is posted
+    /// synchronously from inside whatever wrote. Setting the status button's image from inside a
+    /// window's layout pass marks the status bar window as needing another Update Constraints
+    /// pass while it is already in one, and AppKit answers that with an NSGenericException:
+    /// "more Update Constraints in Window passes than there are views in the window".
+    private func iconSettingsMayHaveChanged() {
+        let current = IconSettings(UserDefaults.standard)
+        guard current != iconSettings else { return }
+        iconSettings = current
+        DispatchQueue.main.async { [weak self] in
+            self?.statusItemController.updateIcon()
         }
     }
 

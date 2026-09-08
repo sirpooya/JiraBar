@@ -31,6 +31,10 @@ final class IssueStore {
     private(set) var isUploadingImage = false
     /// Reactions per comment id. Absent means not loaded, or the endpoint is not available here.
     private(set) var reactionsByComment: [String: [JiraReaction]] = [:]
+    /// Avatar image bytes, keyed by the avatar URL. Held for the session: a board column is the
+    /// same handful of people all day, and each image is a couple of kilobytes.
+    private(set) var avatarData: [String: Data] = [:]
+    private var loadingAvatars: Set<String> = []
     /// The comment whose reaction picker is open, if any.
     var pickingReactionFor: String?
     /// A failure from an action (moving an issue), which is separate from a failure to load.
@@ -315,6 +319,25 @@ final class IssueStore {
         // the section just stays empty.
         commentsByKey[key] = (try? await client.comments(for: key)) ?? []
         await loadReactions(for: key)
+    }
+
+    // MARK: - Avatars
+
+    /// Fetches one assignee's avatar, once. Silent on failure: a missing image leaves the
+    /// initials in place, which already answers whose issue it is.
+    func loadAvatar(for user: JiraUser) async {
+        guard forcedState == nil, let client, let url = user.avatarURL else { return }
+        let key = url.absoluteString
+        guard avatarData[key] == nil, !loadingAvatars.contains(key) else { return }
+        loadingAvatars.insert(key)
+        defer { loadingAvatars.remove(key) }
+        if let data = try? await client.avatar(at: url) {
+            avatarData[key] = data
+        }
+    }
+
+    func avatar(for user: JiraUser) -> Data? {
+        user.avatarURL.flatMap { avatarData[$0.absoluteString] }
     }
 
     // MARK: - Reactions

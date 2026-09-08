@@ -9,6 +9,19 @@ import WebKit
 /// that. The cost is one web view per detail view, which is acceptable for one popover.
 ///
 /// The page is inert. Nothing may navigate; a clicked link opens in the user's browser instead.
+/// A web view that refuses to scroll itself, handing the wheel to whatever contains it.
+///
+/// Height is measured from the page, so in theory the frame always fits the content and there is
+/// nothing to scroll. In practice a measurement can land a few points short while a font or an
+/// image is still settling, and WKWebView answers that by scrolling internally: the thread slides
+/// under the composer while the detail view's own scroller sits untouched. Forwarding the event
+/// makes that impossible rather than unlikely.
+final class NonScrollingWebView: WKWebView {
+    override func scrollWheel(with event: NSEvent) {
+        nextResponder?.scrollWheel(with: event)
+    }
+}
+
 struct DescriptionWebView: NSViewRepresentable {
     let html: String
     let isDark: Bool
@@ -30,12 +43,20 @@ struct DescriptionWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        configuration.userContentController.add(context.coordinator, name: Self.heightChannel)
+        let webView = NonScrollingWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         webView.allowsBackForwardNavigationGestures = false
         return webView
     }
+
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: heightChannel)
+    }
+
+    /// The name the page posts its height on.
+    static let heightChannel = "height"
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let document = Self.document(body: html, isDark: isDark)
@@ -44,7 +65,7 @@ struct DescriptionWebView: NSViewRepresentable {
         webView.loadHTMLString(document, baseURL: nil)
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         private let parent: DescriptionWebView
         var lastLoaded: String?
 
@@ -55,11 +76,25 @@ struct DescriptionWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript("document.body.scrollHeight") { value, _ in
                 guard let height = value as? CGFloat else { return }
-                DispatchQueue.main.async {
-                    // Capped: a very long description scrolls inside the popover instead of
-                    // making the popover taller than the screen.
-                    self.parent.contentHeight = min(max(height, 20), self.parent.maxHeight)
-                }
+                self.apply(height)
+            }
+        }
+
+        /// The page reports its own height whenever it changes, so a late web font, an image that
+        /// finishes loading or a reaction chip wrapping onto a second line all resize the frame.
+        /// The load-time reading alone was a snapshot of a page that had not finished laying out.
+        func userContentController(_ controller: WKUserContentController,
+                                   didReceive message: WKScriptMessage) {
+            guard message.name == DescriptionWebView.heightChannel,
+                  let height = message.body as? NSNumber else { return }
+            apply(CGFloat(height.doubleValue))
+        }
+
+        private func apply(_ height: CGFloat) {
+            DispatchQueue.main.async {
+                let fitted = min(max(height, 20), self.parent.maxHeight)
+                guard abs(self.parent.contentHeight - fitted) > 0.5 else { return }
+                self.parent.contentHeight = fitted
             }
         }
 
@@ -173,9 +208,32 @@ struct DescriptionWebView: NSViewRepresentable {
                       text-decoration: none; }
           .jr:hover, .jrp:hover { background: \(rule); text-decoration: none; }
           .jrm { border-color: \(link); color: \(link); }
-          .jrp { color: \(muted); }
+          .jrp { color: \(muted); display: inline-flex; align-items: center; padding: 3px 6px; }
+          .jrpi { width: 13px; height: 13px; display: block; }
+          /* A comment body inherits the direction its own text resolves to, so the paragraph
+             margins and list indents flip with it rather than staying on the left. */
+          .jcb[dir="auto"] { unicode-bidi: plaintext; }
         </style></head>
-        <body>\(body)</body></html>
+        <body dir="auto">\(body)</body>
+        <script>
+          (function () {
+            var channel = window.webkit && window.webkit.messageHandlers
+                          && window.webkit.messageHandlers.\(heightChannel);
+            if (!channel) { return; }
+            var last = -1;
+            function report() {
+              var height = Math.ceil(document.body.scrollHeight);
+              if (height === last) { return; }
+              last = height;
+              channel.postMessage(height);
+            }
+            if (window.ResizeObserver) {
+              new ResizeObserver(report).observe(document.body);
+            }
+            window.addEventListener('load', report);
+            report();
+          })();
+        </script></html>
         """
     }
 }

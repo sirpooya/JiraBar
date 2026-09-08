@@ -14,6 +14,9 @@ import SwiftUI
 final class DetachedWindow: NSObject, NSWindowDelegate {
     static let shared = DetachedWindow()
 
+    /// Matches the panel's own fixed width in `PopoverRootView`.
+    private static let width: CGFloat = 380
+
     private var window: NSWindow?
     private var onClose: (() -> Void)?
 
@@ -28,11 +31,28 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         }
 
         let hosting = NSHostingController(rootView: rootView)
-        hosting.sizingOptions = [.preferredContentSize]
+        // Deliberately not `.preferredContentSize`, which crashed the app on every launch it was
+        // left detached in. With it the window resized itself to whatever the SwiftUI content
+        // currently preferred, and this content changes height as it loads: the rendered
+        // description and the comment thread each report their real height once laid out, and the
+        // composer grows with the draft. Each change resized the window from inside AppKit's
+        // layout pass, the resize made NSHostingView invalidate and mark constraints dirty again,
+        // and AppKit aborts that with NSGenericException ("more Update Constraints in Window
+        // passes than there are views in the window"). The window owns its size now and the
+        // content scrolls inside it, which is what a window you tore off to read a long thread in
+        // wants anyway.
+        hosting.sizingOptions = []
 
         let window = NSWindow(contentViewController: hosting)
         window.title = "Ticketbar"
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        // Resizable, because nothing sizes it to its content any more: the height is the user's.
+        window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        // 380 is the floor, not the ceiling: the panel fills this window now, so dragging it
+        // wider gives the comment thread more room instead of adding empty margin. A saved frame
+        // wider than the old fixed width restores intact rather than being clamped back.
+        window.contentMinSize = NSSize(width: Self.width, height: 260)
+        window.contentMaxSize = NSSize(width: 1200, height: 2000)
+        window.setContentSize(NSSize(width: Self.width, height: 520))
         window.titlebarAppearsTransparent = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true

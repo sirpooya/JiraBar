@@ -3,6 +3,9 @@ import SwiftUI
 struct IssueDetailView: View {
     let issue: JiraIssue
     @Bindable var store: IssueStore
+    /// True in the detached window, whose height is the user's and stays put. In the popover the
+    /// scroll area is capped instead, because a popover grows to whatever its content asks for.
+    let fillsHeight: Bool
     let onBack: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -64,7 +67,7 @@ struct IssueDetailView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
             }
-            .frame(maxHeight: 340)
+            .frame(maxHeight: fillsHeight ? .infinity : 340)
 
         }
         .task(id: issue.key) {
