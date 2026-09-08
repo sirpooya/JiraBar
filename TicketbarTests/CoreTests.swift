@@ -207,6 +207,32 @@ final class DecodingTests: XCTestCase {
         XCTAssertFalse(PasteRouting.prefersImage(hasImageData: false, text: nil))
     }
 
+    /// Jira renders an attached screenshot as a path on its own host, which a web view cannot
+    /// load: no token, and no base URL to resolve it against.
+    func testAttachmentImageSourcesAreFoundAndRewritten() {
+        let html = """
+        <p>see this</p><img src="/secure/attachment/12345/pastedImage.png" height="200">
+        <img src=\'/secure/attachment/9/b.jpg\'><img src="data:image/png;base64,AAA">
+        """
+        XCTAssertEqual(HTMLImages.sources(in: html),
+                       ["/secure/attachment/12345/pastedImage.png", "/secure/attachment/9/b.jpg"],
+                       "an image already inlined is not fetched again")
+
+        let rewritten = HTMLImages.rewriting(html) { source in
+            source.hasSuffix(".png") ? "data:image/png;base64,ZZZ" : nil
+        }
+        XCTAssertTrue(rewritten.contains("src=\"data:image/png;base64,ZZZ\""))
+        XCTAssertTrue(rewritten.contains("/secure/attachment/9/b.jpg"),
+                      "a source with nothing to put in its place is left alone")
+        XCTAssertTrue(rewritten.contains("height=\"200\""), "the tag's other attributes survive")
+    }
+
+    func testImageMimeTypeComesFromTheExtension() {
+        XCTAssertEqual(HTMLImages.mimeType(forPath: "/a/b/shot.png"), "image/png")
+        XCTAssertEqual(HTMLImages.mimeType(forPath: "/a/b/photo.JPEG"), "image/jpeg")
+        XCTAssertEqual(HTMLImages.mimeType(forPath: "/a/b/thing"), "image/png")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

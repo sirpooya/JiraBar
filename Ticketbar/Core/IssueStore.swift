@@ -31,6 +31,15 @@ final class IssueStore {
     private(set) var isUploadingImage = false
     /// Reactions per comment id. Absent means not loaded, or the endpoint is not available here.
     private(set) var reactionsByComment: [String: [JiraReaction]] = [:]
+    /// Images referenced by rendered HTML, as `data:` URIs keyed by the `src` exactly as it
+    /// appears in that HTML. Filled in the background; whatever has arrived is substituted the
+    /// next time the thread renders, and the rest keep their original src.
+    private(set) var inlinedImages: [String: String] = [:]
+    private var loadingImages: Set<String> = []
+    /// A screenshot inlined as base64 costs about a third more than the file. Past this the image
+    /// is left as a broken link rather than putting a document of many megabytes into a web view.
+    private static let maxInlineImageBytes = 8 * 1024 * 1024
+
     /// Avatar image bytes, keyed by the avatar URL. Held for the session: a board column is the
     /// same handful of people all day, and each image is a couple of kilobytes.
     private(set) var avatarData: [String: Data] = [:]
@@ -319,6 +328,32 @@ final class IssueStore {
         // the section just stays empty.
         commentsByKey[key] = (try? await client.comments(for: key)) ?? []
         await loadReactions(for: key)
+        // Last: the thread is already on screen by now, and the images fill in behind it.
+        await loadImages(in: (commentsByKey[key] ?? []).map(\.html).joined())
+    }
+
+    // MARK: - Images inside rendered HTML
+
+    /// Fetches every image a block of server-rendered HTML points at, through the client, so the
+    /// request carries the token. Silent per image: one that fails leaves the rest readable.
+    func loadImages(in html: String) async {
+        guard forcedState == nil, let client, let base = baseURL, !html.isEmpty else { return }
+        for source in HTMLImages.sources(in: html) {
+            guard inlinedImages[source] == nil, !loadingImages.contains(source) else { continue }
+            guard let url = URL(string: source, relativeTo: base) else { continue }
+            loadingImages.insert(source)
+            defer { loadingImages.remove(source) }
+            guard let data = try? await client.imageData(at: url),
+                  data.count <= Self.maxInlineImageBytes else { continue }
+            inlinedImages[source] = HTMLImages.dataURI(
+                mime: HTMLImages.mimeType(forPath: url.path), data: data)
+        }
+    }
+
+    /// Substitutes the images that have arrived so far.
+    func inliningImages(in html: String) -> String {
+        guard !inlinedImages.isEmpty else { return html }
+        return HTMLImages.rewriting(html) { inlinedImages[$0] }
     }
 
     // MARK: - Avatars

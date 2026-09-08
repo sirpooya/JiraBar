@@ -53,4 +53,5 @@ section when a release is cut.
 - The platform pill no longer wraps mid-word when the header is tight
 - Pasting a screenshot attaches the image instead of inserting its file name as text
 - The back button, title and header buttons line up when an issue title wraps to two lines
+- Images attached to a comment or a description now show, fetched with your token and inlined, instead of appearing as a broken icon with the file name
 

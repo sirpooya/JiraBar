@@ -57,8 +57,16 @@ struct JiraClient {
     /// or a stranger's default image. The host is checked first: the token goes to the Jira host
     /// and nowhere else, whatever URL the server happens to hand back.
     func avatar(at url: URL) async throws -> Data {
+        try await imageData(at: url)
+    }
+
+    /// Any image on the Jira host: an avatar, or an image attached to a comment or a description.
+    ///
+    /// The host is checked first, so the token goes to the Jira host and nowhere else whatever URL
+    /// the server put in the rendered HTML.
+    func imageData(at url: URL) async throws -> Data {
         guard let host = url.host, host == baseURL.host else {
-            throw JiraError.unexpected("That avatar is not on the Jira host.")
+            throw JiraError.unexpected("That image is not on the Jira host.")
         }
         guard let token = tokenProvider(), !token.isEmpty else { throw JiraError.notConfigured }
 

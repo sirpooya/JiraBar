@@ -51,7 +51,7 @@ struct IssueDetailView: View {
 
                     if showDescription {
                         if let html = issue.descriptionHTML {
-                            DescriptionWebView(html: html,
+                            DescriptionWebView(html: store.inliningImages(in: html),
                                                isDark: colorScheme == .dark,
                                                contentHeight: $descriptionHeight)
                                 .frame(height: descriptionHeight)
@@ -73,6 +73,10 @@ struct IssueDetailView: View {
         .task(id: issue.key) {
             stagedTransition = nil
             await store.loadTransitions(for: issue.key)
+        }
+        .task(id: issue.key) {
+            guard showDescription, let html = issue.descriptionHTML else { return }
+            await store.loadImages(in: html)
         }
         .task(id: issue.key) {
             guard showComments else { return }
@@ -188,10 +192,12 @@ struct IssueDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    DescriptionWebView(html: JiraComment.composedHTML(
-                                            comments,
-                                            editableIDs: store.editableCommentIDs(for: issue.key),
-                                            reactions: store.reactionsByComment),
+                    let thread = JiraComment.composedHTML(
+                        comments,
+                        editableIDs: store.editableCommentIDs(for: issue.key),
+                        reactions: store.reactionsByComment)
+
+                    DescriptionWebView(html: store.inliningImages(in: thread),
                                        isDark: colorScheme == .dark,
                                        onEditComment: { id in
                                            store.beginCommentEdit(id, on: issue.key)
