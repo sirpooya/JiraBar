@@ -31,4 +31,22 @@ enum JiraIconAsset {
         guard let name, !name.isEmpty else { return nil }
         return "\(kind.rawValue)-\(name)"
     }
+
+    #if DEBUG
+    private static let reported = NSMutableSet()
+
+    /// Names an icon this build has no asset for, once per URL, so the missing file can be added
+    /// rather than guessed at.
+    static func reportMissing(_ url: String?, name: String?) {
+        guard let url, !url.isEmpty else { return }
+        objc_sync_enter(reported)
+        let isNew = !reported.contains(url)
+        if isNew { reported.add(url) }
+        objc_sync_exit(reported)
+        guard isNew else { return }
+        FileHandle.standardError.write(Data("[icon] no asset for \(name ?? "?"): \(url)\n".utf8))
+    }
+    #else
+    static func reportMissing(_ url: String?, name: String?) {}
+    #endif
 }

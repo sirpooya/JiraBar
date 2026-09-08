@@ -31,6 +31,10 @@ section when a release is cut.
 - Swipe across the header with two fingers to move between board columns
 - An app icon, built from an Icon Composer bundle
 - An issue's Component/s, Labels, Story Points and Affects Version/s under the header
+- Opening an issue slides it in from the right and going back slides it out again, by button or by swipe
+- Jira's issue type icon leads every row in the list
+- A task or sub-task shows its parent story, and an epic link when it has one
+- Switching column slides the list in the direction you went, by swipe or from the dropdown
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -50,6 +54,10 @@ section when a release is cut.
 - Issue type and priority show Jira's own icons instead of plain text chips
 - An issue title stays on one line and ends in an ellipsis rather than being clipped
 - The move menu names each destination exactly as the board names that column, with no added emoji
+- Component/s and Labels read as tag chips, and the Updated line is gone
+- The platform tag moved out of the issue header down to the row of chips with the issue's other attributes
+- The issue count sits with the column name in the header instead of in a badge of its own
+- Removed the standing "Paste a screenshot to attach it" hint under the comment box, and widened the gap between the composer and the comment thread.
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -72,4 +80,6 @@ section when a release is cut.
 - Cmd+V, Cmd+C, Cmd+X, Cmd+A and undo work in the comment box and the token field, for plain text as well as pasted images
 - Two-finger swipes now register: the gesture is judged on its whole travel, so swiping between columns and swiping back both work
 - The move menu no longer shows two emoji per row on a board whose columns are already named with one
+- More issue types show their icon, not only stories and tasks
+- Issue types whose icon this Jira serves as its own avatar, Task among them, now show it
 

@@ -12,6 +12,10 @@ struct PopoverRootView: View {
 
     private static let width: CGFloat = 380
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Which way the next column change should travel. Set before the change, so the list leaves
+    /// in the direction the swipe went rather than always the same way.
+    @State private var columnGoesForward = true
     @State private var columnSwipeMonitor: Any?
     @State private var columnSwipe = SwipeTracker()
 
@@ -26,15 +30,33 @@ struct PopoverRootView: View {
                     store.selectedKey = nil
                     store.actionError = nil
                 }
+                // Opening an issue pushes it in from the trailing edge and takes the list out to
+                // the leading one, so the two read as one place you moved through rather than as
+                // a swap. Going back runs it the other way, which is the same direction the swipe
+                // across the header goes.
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 if store.isShowingSampleData { sampleDataBanner }
                 header
                 Divider().opacity(0.5)
                 content
+                    .id(store.scope?.id ?? "no-column")
+                    .transition(.asymmetric(
+                        insertion: .move(edge: columnGoesForward ? .trailing : .leading)
+                            .combined(with: .opacity),
+                        removal: .move(edge: columnGoesForward ? .leading : .trailing)
+                            .combined(with: .opacity)))
                 Divider().opacity(0.5)
                 footer
             }
         }
+        .transition(.move(edge: .leading).combined(with: .opacity))
+        // Clipped, or the view sliding out is drawn beyond the panel while it goes.
+        .clipped()
+        // Short on purpose. In the popover the panel is sized to its content, so this animates the
+        // popover's own size as well, and a long one would leave the window stretching visibly.
+        // Off entirely when the system asks for less motion.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: store.selectedKey)
         // In the popover the size is the content's: a popover has no frame of its own to fill,
         // so the width is pinned and the scroll areas are capped.
         //
@@ -77,16 +99,6 @@ struct PopoverRootView: View {
             scopePicker
 
             HStack(spacing: 8) {
-                if store.badgeCount > 0 {
-                    Text("\(store.badgeCount)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.primary.opacity(0.08)))
-                        .help("\(store.badgeCount) issues in this column")
-                }
-
                 Spacer(minLength: 0)
 
                 if store.isRefreshing {
@@ -176,14 +188,45 @@ struct PopoverRootView: View {
         guard let next = ColumnPaging.column(after: store.scope,
                                              in: store.columns,
                                              forward: forward) else { return }
-        store.scope = next
+        select(next)
     }
 
+    /// Changes column with the list sliding the way you went. Used by the swipe and by the
+    /// dropdown, so picking "Done" from the menu travels the same direction as swiping to it.
+    private func select(_ column: BoardColumn) {
+        if let from = store.scope.flatMap({ store.columns.firstIndex(of: $0) }),
+           let to = store.columns.firstIndex(of: column) {
+            columnGoesForward = to > from
+        }
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
+            store.scope = column
+        }
+    }
+
+    /// The count sits beside the menu rather than inside its label: a `Menu` in the borderless
+    /// style renders only the first view of a composed label, so a badge and a name together left
+    /// the name invisible. Outside the menu it can be a real badge again, and it still reads in
+    /// front of the column name and before the chevron.
     private var scopePicker: some View {
+        HStack(spacing: 5) {
+            if store.badgeCount > 0 {
+                Text("\(store.badgeCount)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .help("\(store.badgeCount) issues in this column")
+            }
+            columnMenu
+        }
+    }
+
+    private var columnMenu: some View {
         Menu {
             ForEach(store.columns) { column in
                 Button {
-                    store.scope = column
+                    select(column)
                 } label: {
                     Label(column.name, systemImage: store.scope == column ? "checkmark" : "")
                 }
@@ -192,6 +235,11 @@ struct PopoverRootView: View {
             // No hand-drawn chevron here. `.menuIndicator(.hidden)` does not take on the
             // borderless menu style, so a custom one just ends up as a second arrow in the wrong
             // place; the system indicator is left to do its own job.
+            // The count sits with the column name rather than in a badge of its own off to the
+            // left: it is a fact about this column, and two separate things in the header read as
+            // two unrelated things.
+            // One `Text`, not a stack of them. A `Menu` in the borderless style renders only the
+            // first view of a composed label, so the count drew and the column name vanished.
             Text(store.scope?.name ?? "Loading board...")
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
@@ -199,7 +247,7 @@ struct PopoverRootView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(store.columns.isEmpty)
-        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"). Choose a board column.")
+        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(store.badgeCount) issues. Choose a board column.")
     }
 
     // MARK: - Content

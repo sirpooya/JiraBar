@@ -130,10 +130,6 @@ struct IssueDetailView: View {
                 .layoutPriority(1)
                 .help(issue.cleanSummary)
 
-            if let platform = issue.platform {
-                PlatformPill(platform: platform)
-            }
-
             Spacer(minLength: 6)
 
             moveMenu
@@ -156,14 +152,21 @@ struct IssueDetailView: View {
                 StatusPill(name: issue.statusName,
                            categoryKey: issue.fields.status?.statusCategory?.key)
                 if let type = issue.fields.issuetype?.name {
-                    JiraIconChip(assetName: JiraIconAsset.name(forIconURL: issue.fields.issuetype?.iconUrl,
-                                                               kind: .issueType),
-                                 text: type)
+                    JiraIconChip(url: issue.fields.issuetype?.iconUrl,
+                                 kind: .issueType,
+                                 text: type,
+                                 store: store)
                 }
                 if let priority = issue.fields.priority?.name {
-                    JiraIconChip(assetName: JiraIconAsset.name(forIconURL: issue.fields.priority?.iconUrl,
-                                                               kind: .priority),
-                                 text: priority)
+                    JiraIconChip(url: issue.fields.priority?.iconUrl,
+                                 kind: .priority,
+                                 text: priority,
+                                 store: store)
+                }
+                // Down here with the issue's other attributes rather than up in the header, where
+                // it sat between the title and the buttons and read as one of the controls.
+                if let platform = issue.platform {
+                    PlatformPill(platform: platform)
                 }
                 DueBadge(due: issue.dueDate)
             }
@@ -181,19 +184,28 @@ struct IssueDetailView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .frame(width: 96, alignment: .leading)
-                    Text(row.value)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if row.isTagList {
+                        HStack(spacing: 4) {
+                            ForEach(row.values, id: \.self) { value in
+                                Text(value)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.primary.opacity(0.07)))
+                            }
+                        }
+                    } else {
+                        Text(row.value)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
-            if let updated = issue.updatedDate {
-                Text("Updated \(updated.formatted(.relative(presentation: .named)))")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+
         }
     }
 
@@ -225,7 +237,7 @@ struct IssueDetailView: View {
             CommentComposer(store: store, issueKey: issue.key)
                 // Breathing room before the thread starts, so the composer reads as its own
                 // thing rather than as part of the first comment under it.
-                .padding(.bottom, 10)
+                .padding(.bottom, 22)
 
             if let comments {
                 if comments.isEmpty {
@@ -417,21 +429,17 @@ struct IssueDetailView: View {
 /// A chip that leads with Jira's own icon for the thing it names, and falls back to the plain
 /// text chip when that icon is not one of the bundled ones.
 struct JiraIconChip: View {
-    let assetName: String?
+    let url: String?
+    let kind: JiraIconAsset.Kind
     let text: String
+    @Bindable var store: IssueStore
 
     var body: some View {
-        if let assetName, NSImage(named: assetName) != nil {
-            HStack(spacing: 4) {
-                Image(assetName)
-                    .resizable()
-                    .frame(width: 12, height: 12)
-                Text(text)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-        } else {
-            MetaChip(text: text)
+        HStack(spacing: 4) {
+            JiraIcon(url: url, kind: kind, label: text, store: store)
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
         }
     }
 }

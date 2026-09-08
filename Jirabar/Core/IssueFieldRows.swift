@@ -54,6 +54,13 @@ indirect enum JSONValue: Decodable, Hashable {
             for key in ["name", "value", "displayName"] {
                 if let text = fields[key]?.displayText { return text }
             }
+            // A parent is an issue, not a value: "DDS-410 Tile Tab, Tab Bar". This is what a
+            // sub-task's story, and a task's, is read from.
+            if let key = fields["key"]?.displayText {
+                guard case .object(let inner)? = fields["fields"],
+                      let summary = inner["summary"]?.displayText else { return key }
+                return "\(key)  \(summary)"
+            }
             return nil
         }
     }
@@ -62,12 +69,24 @@ indirect enum JSONValue: Decodable, Hashable {
 struct IssueFieldRow: Hashable {
     let label: String
     let value: String
+
+    /// The individual values, for the fields that hold a list of them.
+    var values: [String] {
+        value.components(separatedBy: ", ").filter { !$0.isEmpty }
+    }
+
+    /// Components and labels are tags in Jira and read as tags here: one chip each, rather than
+    /// a comma separated line that has to be parsed by eye.
+    var isTagList: Bool {
+        label == "Component/s" || label == "Labels"
+    }
 }
 
 enum IssueFieldRows {
     /// Shown in this order, under the chips. Jira's own display names, matched against the `names`
     /// map the server returns, so the custom field ids never appear in this app.
-    static let wanted = ["Affects Version/s", "Component/s", "Labels", "Story Points"]
+    static let wanted = ["Parent", "Epic Link", "Affects Version/s",
+                         "Component/s", "Labels", "Story Points"]
 
     /// - Parameters:
     ///   - fields: the issue's `fields` object, keyed by field id.

@@ -204,13 +204,11 @@ struct CommentComposer: View {
                     .fill(Color.primary.opacity(0.06)))
 
             HStack(spacing: 8) {
+                // No standing "paste a screenshot" hint. It was a permanent line of instruction
+                // for something that either works or reports itself while it happens.
                 if store.isUploadingImage {
                     ProgressView().controlSize(.small).scaleEffect(0.6)
                     Text("Uploading image").font(.caption2).foregroundStyle(.secondary)
-                } else {
-                    Text("Paste a screenshot to attach it")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
 
                 Spacer(minLength: 0)

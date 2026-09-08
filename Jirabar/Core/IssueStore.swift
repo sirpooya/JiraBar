@@ -332,6 +332,35 @@ final class IssueStore {
         await loadImages(in: (commentsByKey[key] ?? []).map(\.html).joined())
     }
 
+    // MARK: - Jira's own icons
+
+    /// Icon bytes keyed by the URL Jira reported, for the icons that are not bundled.
+    ///
+    /// This instance serves its Task icon from `/secure/viewavatar?avatarId=10318`, a PNG chosen
+    /// per instance rather than one of the named files under `/images/icons`. No bundled asset can
+    /// match it, so it is fetched through the client like an avatar, with the same token and the
+    /// same host guard.
+    private(set) var iconData: [String: Data] = [:]
+    private var loadingIcons: Set<String> = []
+
+    func loadIcon(at url: String?) async {
+        guard forcedState == nil, let client, let url, !url.isEmpty else { return }
+        guard iconData[url] == nil, !loadingIcons.contains(url) else { return }
+        guard let resolved = URL(string: url, relativeTo: baseURL) else { return }
+        loadingIcons.insert(url)
+        defer { loadingIcons.remove(url) }
+
+        guard let data = try? await client.imageData(at: resolved) else {
+            JiraIconAsset.reportMissing(url, name: "fetch failed")
+            return
+        }
+        iconData[url] = data
+    }
+
+    func icon(for url: String?) -> Data? {
+        url.flatMap { iconData[$0] }
+    }
+
     // MARK: - Issue fields
 
     /// The side panel fields (components, labels, story points, affected versions), per issue.

@@ -31,7 +31,17 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
   so the artifact is `Jirabar.app`.
 
 ## Status
-2026-09-08 (latest): the detail view is one scroll area, rows carry the key and the assignee's
+2026-09-09 (latest): **renamed Ticketbar to Jirabar**, and it now has both icons. The menu bar
+glyph is the supplied `MenuBarIcon.png`, cropped to its ink and tinted per draw so one grayscale
+file serves template and colour modes. The app icon is an Icon Composer `AppIcon.icon`, which is
+the first app icon this project has ever had. The app is `.accessory` permanently and never shows
+in the Dock, detached or not. 96 tests green, and everything is **uncommitted**.
+Two cautions carried into this state. First, the naming and the icon are both Atlassian's
+trademark and are only safe while this stays internal; see the Naming section. Second, an untracked
+file (`Core/ColumnGlyph.swift`, plus four tests) was deleted mid-session by something outside
+Claude, unrecoverably. Commit early here, and do not assume the working tree is still yours.
+
+2026-09-08: the detail view is one scroll area, rows carry the key and the assignee's
 avatar, comment images are inlined, the composer grows to five lines and flips to right to left for
 Persian, the editing shortcuts are delivered by a key monitor, the reaction picker opens against
 its chip, a swipe right goes back, and two separate crash loops are fixed (see the `sizingOptions`
@@ -134,7 +144,7 @@ Jirabar/
     StatusItemController  status item, popover, detach, icon updates
     StatusItemIcon      the two rendering modes and the urgency colours
     DetachedWindow      the torn-off floating window (NSWindow, never NSPanel)
-    WindowActivation    .accessory to .regular, derived from the window list
+    WindowActivation    holds the app at .accessory forever, so no Dock tile ever appears
   Views/               SwiftUI
     PopoverRootView     header with the column dropdown, the state switch, footer
     IssueListView       inside PopoverRootView
@@ -155,7 +165,9 @@ Jirabar/
     Keys                every defaults key, registered at launch
     Platform            Tech Area, field first then emoji fallback
     QCHooks             forced states and fixtures. DEBUG only.
-  Resources/           Assets.xcassets
+  Resources/           MenuBarIcon.png, AppIcon.icon. No Assets.xcassets: there never was one,
+                       which is why ASSETCATALOG_COMPILER_APPICON_NAME pointed at nothing and the
+                       app shipped with no icon until 2026-09-09.
   Info.plist
   Jirabar.entitlements
 JirabarTests/        CoreTests, StorageTests. The app is the TEST_HOST.
@@ -250,10 +262,21 @@ carries no path.
   you are about to change. A row is two lines: column pill, platform tag and due date, then the
   title. No issue key: it is a reference number, not something to read.
 - 2026-09-08 The panel can be **detached** into a floating window (`Keys.detached`, persisted). It
-  is a plain `NSWindow`, never an `NSPanel`: `WindowActivation` derives the activation policy from
-  the titled non-panel windows on screen, so a panel leaves the app `.accessory` and the comment
-  field refuses first responder. While detached the status item raises the window instead of
-  opening a second copy of the same panel underneath it.
+  is a plain `NSWindow`, never an `NSPanel`. `.titled` is what makes a window able to become key,
+  so this one takes the caret on its own; an `NSPanel` declines key status on its own terms, which
+  is what the comment field refusing first responder was really about. While detached the status
+  item raises the window instead of opening a second copy of the same panel underneath it.
+- 2026-09-09 **The app is `.accessory` for the life of the process and never appears in the Dock**,
+  detached window and settings window included. The user asked for this explicitly. `WindowActivation`
+  used to flip to `.regular` whenever a titled window was open, on the theory that an accessory app
+  cannot hold key focus, and the Dock tile was the visible cost of that theory. It was wrong:
+  `NSApp.activate(ignoringOtherApps: true)` is what gives the window focus, and the policy flip was
+  never doing the work. `claim()` now only activates, and `evaluate()` re-asserts `.accessory` so
+  nothing can strand a Dock tile for the rest of a session.
+  Verified 2026-09-09 in the reported state: launched with `Keys.detached` true, the window open at
+  380 points on layer 3 per `CGWindowListCopyWindowInfo`, and LaunchServices reporting
+  `ApplicationType=UIElement` at the same moment. If a text field ever refuses the caret again, the
+  thing to check is `.titled` and `canBecomeKey`, **not** the activation policy.
 - 2026-09-08 **Jirabar never deletes a Jira comment.** Add, edit and react only. There is no
   `deleteComment` on the client, no delete link in the rendered thread, and a test asserts the
   composed HTML contains no delete affordance. A delete control in a popover that opens under the
@@ -369,12 +392,18 @@ carries no path.
   guards: only in the top strip of the panel, and only when the movement is decisively sideways, so
   scrolling the thread with a sideways drift never triggers it.
 - 2026-09-08 The move control is an **ellipsis**, and each destination in its menu is named after
-  the **board column** that gathers the destination status (`ColumnGlyph`). The column name because
-  the dropdown says "Testing" where this workflow's transition says "Test", and two names for one
-  place is one too many. A glyph is added **only when the name has none**: board 95's columns are
-  already named with a coloured circle, "🟠 Working on it", "🟣 QC Ready", "🟢 Done", and prefixing
-  another put two emoji on every row. Where one is added it is an emoji rather than a tinted SF
-  Symbol, because a macOS menu strips the tint and the colour would not survive.
+  the **board column** that gathers the destination status. The column name because the dropdown
+  says "Testing" where this workflow's transition says "Test", and two names for one place is one
+  too many. This part still holds: `IssueDetailView.label(for:)` resolves the name through
+  `BoardColumn.name(forStatusID:in:)` and falls back to the transition's own name.
+  > **The `ColumnGlyph` half of this is GONE.** It added a colour emoji to a destination whose name
+  > had none, an emoji rather than a tinted SF Symbol because a macOS menu strips the tint. The
+  > file `Core/ColumnGlyph.swift` and its four tests were untracked working-tree work and were
+  > deleted on 2026-09-09 by something outside the Claude session, with no commit, stash or
+  > snapshot to recover from. The suite went 100 back to 96. Nothing references it now and the menu
+  > works without it. Board 95's columns are already named with a coloured circle, "🟠 Working on
+  > it", "🟣 QC Ready", "🟢 Done", so the glyph only ever mattered for a column named without one.
+  > Rebuild it only if such a column shows up.
 - 2026-09-08 DEBUG logging writes to `FileHandle.standardError`, never `print`. `print` to a pipe
   is block buffered, and the first attempt at logging the undocumented reaction calls produced an
   empty file because the buffer never flushed.

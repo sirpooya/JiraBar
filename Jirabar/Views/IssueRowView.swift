@@ -23,6 +23,13 @@ struct IssueRowView: View {
                     // above the title. The key leads it, because it is the thing you quote to
                     // somebody else.
                     HStack(spacing: 6) {
+                        // Jira's own icon for the type, leading the row the way it leads a card
+                        // on the board. No text beside it: the shape is the whole point, and the
+                        // detail view spells it out.
+                        JiraIcon(url: issue.fields.issuetype?.iconUrl,
+                                 kind: .issueType,
+                                 label: issue.fields.issuetype?.name,
+                                 store: store)
                         Text(issue.key)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -38,7 +45,7 @@ struct IssueRowView: View {
                     }
 
                     Text(issue.cleanSummary)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -146,6 +153,40 @@ struct StatusPill: View {
             .padding(.vertical, 2)
             .background(
                 Capsule().fill(tint.opacity(0.14)))
+    }
+}
+
+/// One of Jira's own icons, from the bundle when it is a named file and from the server when it
+/// is not.
+///
+/// Both paths are needed. The icons under `/images/icons` are SVG, which `NSImage` cannot decode
+/// at runtime, so those have to be compiled into an asset catalog. An instance also picks its own
+/// avatar for a type (`/secure/viewavatar?avatarId=10318` for Task on this one), which is a PNG
+/// that no bundled name could ever match, so that one is fetched with the token like an avatar.
+struct JiraIcon: View {
+    let url: String?
+    let kind: JiraIconAsset.Kind
+    let label: String?
+    @Bindable var store: IssueStore
+    var side: CGFloat = 12
+
+    var body: some View {
+        if let asset = JiraIconAsset.name(forIconURL: url, kind: kind), NSImage(named: asset) != nil {
+            icon(Image(asset))
+        } else if let data = store.icon(for: url), let image = NSImage(data: data) {
+            icon(Image(nsImage: image))
+        } else {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .task(id: url) { await store.loadIcon(at: url) }
+        }
+    }
+
+    private func icon(_ image: Image) -> some View {
+        image
+            .resizable()
+            .frame(width: side, height: side)
+            .help(label ?? "")
     }
 }
 
