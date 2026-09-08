@@ -141,15 +141,72 @@ struct JiraClient {
     }
 
     func addReaction(_ emojiId: String, issueKey: String, commentID: String) async throws {
-        try await write("/rest/internal/2/issue/\(issueKey)/comment/\(commentID)/reaction/\(emojiId)",
-                        method: "PUT", body: [:])
+        try await attempt(Self.reactionCalls(adding: true,
+                                             emojiId: emojiId,
+                                             issueKey: issueKey,
+                                             commentID: commentID))
     }
 
     /// Removes *your own* reaction. This is not the comment-delete that Ticketbar refuses to have:
     /// it takes back something you added, and cannot touch anyone else's comment or reaction.
     func removeReaction(_ emojiId: String, issueKey: String, commentID: String) async throws {
-        try await write("/rest/internal/2/issue/\(issueKey)/comment/\(commentID)/reaction/\(emojiId)",
-                        method: "DELETE", body: [:])
+        try await attempt(Self.reactionCalls(adding: false,
+                                             emojiId: emojiId,
+                                             issueKey: issueKey,
+                                             commentID: commentID))
+    }
+
+    /// One way of asking this instance to record a reaction.
+    private struct ReactionCall {
+        let method: String
+        let path: String
+        let query: [String: String]
+    }
+
+    /// The shapes Jira Server/DC has used for comment reactions, most likely first.
+    ///
+    /// `/rest/internal/2` is Jira's own UI API. It is undocumented, it changed between versions,
+    /// and the single shape this used to send returned 404 on works.digikala.com. Rather than
+    /// guess again, each shape is tried until one is accepted. A 404 records nothing, so the
+    /// attempts that miss cannot leave anything behind on somebody's board, and at most one of
+    /// them can succeed.
+    private static func reactionCalls(adding: Bool,
+                                      emojiId: String,
+                                      issueKey: String,
+                                      commentID: String) -> [ReactionCall] {
+        let comment = "/rest/internal/2/issue/\(issueKey)/comment/\(commentID)"
+        let write = adding ? "PUT" : "DELETE"
+        return [
+            ReactionCall(method: write, path: "\(comment)/reaction", query: ["emojiId": emojiId]),
+            ReactionCall(method: adding ? "POST" : "DELETE",
+                         path: "\(comment)/reactions",
+                         query: ["emojiId": emojiId]),
+            ReactionCall(method: write, path: "\(comment)/reaction/\(emojiId)", query: [:]),
+            ReactionCall(method: adding ? "POST" : "DELETE",
+                         path: "/rest/internal/2/comment/\(commentID)/reactions",
+                         query: ["emojiId": emojiId]),
+        ]
+    }
+
+    /// Sends each call until one is not rejected, and throws what the last one said if none are.
+    private func attempt(_ calls: [ReactionCall]) async throws {
+        var lastError: Error = JiraError.unexpected("This Jira did not accept the reaction.")
+        for call in calls {
+            do {
+                let request = try makeRequest(path: call.path,
+                                              query: call.query,
+                                              method: call.method,
+                                              body: nil)
+                _ = try await send(request)
+                return
+            } catch let error as JiraError {
+                // Only a missing endpoint is worth trying the next shape for. Anything else, an
+                // expired token or an unreachable host, is the real answer and stops here.
+                guard case .notFound = error else { throw error }
+                lastError = error
+            }
+        }
+        throw lastError
     }
 
     // There is deliberately NO deleteComment here, and there must never be one. Ticketbar can add
@@ -268,12 +325,30 @@ struct JiraClient {
         guard let http = response as? HTTPURLResponse else {
             throw JiraError.unexpected("The server did not answer with HTTP.")
         }
+        #if DEBUG
+        logInternalCall(request, status: http.statusCode, body: data)
+        #endif
         // Jira Server answers an expired bearer token with a login page in some proxy setups, so
         // the status code is the only thing worth trusting here.
         let message = (try? JSONDecoder().decode(JiraErrorBody.self, from: data))?.firstMessage
         if let error = JiraError.from(statusCode: http.statusCode, message: message) { throw error }
         return data
     }
+
+    #if DEBUG
+    /// Logs the `/rest/internal/2` calls only, which are Jira's own undocumented UI API and have
+    /// never been proven against this instance. The `Authorization` header is deliberately not
+    /// touched here: the token is never printed, logged or put in an error message.
+    private func logInternalCall(_ request: URLRequest, status: Int, body: Data) {
+        guard let url = request.url, url.path.contains("/rest/internal/") else { return }
+        let query = url.query.map { "?\($0)" } ?? ""
+        let answer = String(data: body.prefix(400), encoding: .utf8) ?? "(not text)"
+        let line = "[jira] \(request.httpMethod ?? "?") \(url.path)\(query) -> \(status) \(answer)\n"
+        // Straight to the file handle: `print` to a pipe is block buffered, and the buffer never
+        // flushed, so the first attempt at this logging produced nothing at all.
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+    #endif
 }
 
 private extension String {

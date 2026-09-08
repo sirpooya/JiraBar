@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         poller.start()
 
         installMainMenu()
+        installEditingShortcuts()
         observeSleepAndWake()
         observeDefaults()
 
@@ -97,6 +98,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = main
     }
 
+    /// Delivers the standard editing shortcuts to whatever has focus.
+    ///
+    /// The menu above is not enough on its own. AppKit dispatches these through `NSApp.mainMenu`,
+    /// and this app's only scene is a `MenuBarExtra`, so SwiftUI owns that menu and replaces what
+    /// the delegate installs. Nothing then handled `Cmd+V` at all: not in the comment box, not in
+    /// the token field, for text as much as for a pasted screenshot.
+    ///
+    /// A local monitor sees the key before the window dispatches it, so it does not depend on the
+    /// menu or on the responder chain agreeing. It only acts when the focused responder can
+    /// actually perform the action, and otherwise hands the event straight back untouched.
+    private func installEditingShortcuts() {
+        editingShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command || flags == [.command, .shift],
+                  let key = event.charactersIgnoringModifiers?.lowercased(),
+                  let responder = event.window?.firstResponder
+                      ?? NSApp.keyWindow?.firstResponder else { return event }
+
+            let action: Selector?
+            switch (flags, key) {
+            case (.command, "v"): action = Selector(("paste:"))
+            case (.command, "c"): action = Selector(("copy:"))
+            case (.command, "x"): action = Selector(("cut:"))
+            case (.command, "a"): action = Selector(("selectAll:"))
+            case (.command, "z"): action = Selector(("undo:"))
+            case ([.command, .shift], "z"): action = Selector(("redo:"))
+            default: action = nil
+            }
+
+            guard let action else { return event }
+
+            if responder.responds(to: action) {
+                #if DEBUG
+                FileHandle.standardError.write(Data("[keys] cmd+\(key) -> \(action) on \(type(of: responder))\n".utf8))
+                #endif
+                NSApp.sendAction(action, to: responder, from: nil)
+                return nil
+            }
+
+            // Undo and redo live on the undo manager rather than on the responder itself.
+            if let undo = responder.undoManager {
+                if action == Selector(("undo:")), undo.canUndo { undo.undo(); return nil }
+                if action == Selector(("redo:")), undo.canRedo { undo.redo(); return nil }
+            }
+            return event
+        }
+    }
+
     // MARK: - Sleep and wake
 
     /// Polling stops for the duration of the sleep and does exactly one refresh on wake, rather
@@ -128,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var iconSettings: IconSettings?
+    private var editingShortcutMonitor: Any?
 
     private func observeDefaults() {
         iconSettings = IconSettings(UserDefaults.standard)

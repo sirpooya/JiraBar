@@ -58,4 +58,6 @@ section when a release is cut.
 - Cmd+V works in the comment box, so a screenshot on the clipboard actually attaches
 - The detached window can no longer be dragged narrower than the panel, and a window saved too narrow by an earlier build is widened when it reopens
 - The add-a-reaction chip opens the emoji picker beside the comment you clicked, instead of placing it below the whole thread where it could not be seen
+- Adding or removing an emoji reaction tries the shapes this Jira's internal API accepts, and says so plainly when the reaction does not stick
+- Cmd+V, Cmd+C, Cmd+X, Cmd+A and undo work in the comment box and the token field, for plain text as well as pasted images
 

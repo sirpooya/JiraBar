@@ -403,6 +403,17 @@ final class IssueStore {
             }
             if let refreshed = try? await client.reactions(issueKey: key, commentID: commentID) {
                 reactionsByComment[commentID] = refreshed
+                // Jira's internal API can answer 200 and still not record anything. Reading the
+                // reactions back is the only way to know, and saying so beats a click that looks
+                // like it worked and then quietly is not there.
+                let stuck = refreshed.contains {
+                    $0.emojiId == emojiId && ($0.currentUserReacted == true) != isMine
+                }
+                if !stuck {
+                    actionError = "Jira accepted that but the reaction is not there when read back."
+                }
+            } else {
+                actionError = "The reaction was sent, but Jira would not say what the reactions are now."
             }
         } catch let error as JiraError {
             actionError = Self.message(for: error)

@@ -49,9 +49,13 @@ final class PastingTextView: NSTextView {
         // rule let any text at all beat the image, so pasting a screenshot copied out of a
         // browser or a design tool inserted its file name as a line of text and dropped the
         // picture on the floor.
-        if PasteRouting.prefersImage(hasImageData: image != nil,
-                                     text: pasteboard.string(forType: .string)),
-           let png = image?.pngData() {
+        let text = pasteboard.string(forType: .string)
+        #if DEBUG
+        FileHandle.standardError.write(Data(
+            "[paste] image=\(image != nil) textLength=\(text?.count ?? -1)\n".utf8))
+        #endif
+
+        if PasteRouting.prefersImage(hasImageData: image != nil, text: text), let png = image?.pngData() {
             onPasteImage?(png)
             return
         }
