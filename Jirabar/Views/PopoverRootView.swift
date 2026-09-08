@@ -13,14 +13,12 @@ struct PopoverRootView: View {
     private static let width: CGFloat = 380
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Which way the next column change should travel. Set before the change, so the list leaves
-    /// in the direction the swipe went rather than always the same way.
+    /// Which way the next column change travels, so the list leaves the way the swipe went.
     @State private var columnGoesForward = true
+
     @State private var columnSwipeMonitor: Any?
     @State private var columnSwipe = SwipeTracker()
 
-    /// The strip across the top the column swipe is read in, covering the header row.
-    private static let headerStripHeight: CGFloat = 56
     private static let columnSwipeThreshold: CGFloat = 40
 
     var body: some View {
@@ -40,12 +38,26 @@ struct PopoverRootView: View {
                 header
                 Divider().opacity(0.5)
                 content
+                    // Fills the detached window, so the header stays at the top and the footer at
+                    // the bottom instead of the whole panel floating in the middle of a tall
+                    // window. The list already did this; the loading and empty states did not.
+                    .frame(maxHeight: isDetached ? .infinity : nil)
                     .id(store.scope?.id ?? "no-column")
+                    // The list slides the way the swipe went, one whole view leaving and one
+                    // arriving.
+                    //
+                    // What must never come back is `withAnimation` around the scope change:
+                    // setting the scope replaces the whole tree at once (the list becomes the
+                    // loading state, the header text and the count change), and animating that
+                    // transaction told SwiftUI to move every changed view separately, so rows came
+                    // apart and avatars and half drawn text flew across the panel. Attached here,
+                    // it animates this view's arrival and departure and nothing else.
                     .transition(.asymmetric(
-                        insertion: .move(edge: columnGoesForward ? .trailing : .leading)
-                            .combined(with: .opacity),
+                        insertion: .move(edge: columnGoesForward ? .trailing : .leading),
                         removal: .move(edge: columnGoesForward ? .leading : .trailing)
                             .combined(with: .opacity)))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.28),
+                               value: store.scope?.id)
                 Divider().opacity(0.5)
                 footer
             }
@@ -56,7 +68,7 @@ struct PopoverRootView: View {
         // Short on purpose. In the popover the panel is sized to its content, so this animates the
         // popover's own size as well, and a long one would leave the window stretching visibly.
         // Off entirely when the system asks for less motion.
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: store.selectedKey)
+        .animation(navigationAnimation, value: store.selectedKey)
         // In the popover the size is the content's: a popover has no frame of its own to fill,
         // so the width is pinned and the scroll areas are capped.
         //
@@ -141,9 +153,14 @@ struct PopoverRootView: View {
     /// rearranges needs no change here.
     // MARK: - Swiping between columns
 
-    /// A two-finger swipe across the header steps through the board's columns, left for the next
-    /// one and right for the previous, which is the same direction sense as the swipe back inside
-    /// an issue. The ends hold instead of wrapping.
+    /// A two-finger swipe steps through the board's columns, left for the next one and right for
+    /// the previous, which is the same direction sense as the swipe back inside an issue. The ends
+    /// hold instead of wrapping.
+    ///
+    /// Anywhere over the list, not just the header: the header is a 56 point strip at the top of
+    /// a panel that is mostly rows, so a swipe aimed at the list did nothing. Scrolling the rows
+    /// still works, because a gesture only counts as a swipe when its whole travel is further
+    /// sideways than vertical.
     ///
     /// A local scroll monitor for the same reason as the swipe back: a trackpad swipe is a scroll
     /// event with precise deltas and a phase, and no SwiftUI gesture reports it.
@@ -164,8 +181,6 @@ struct PopoverRootView: View {
     private func handleColumnSwipe(_ event: NSEvent) -> Bool {
         // Only over the list. An issue is open on top of this, and a swipe there means go back.
         guard store.selectedKey == nil, store.columns.count > 1 else { return false }
-        guard let contentHeight = event.window?.contentView?.bounds.height,
-              event.locationInWindow.y > contentHeight - Self.headerStripHeight else { return false }
 
         if event.phase.contains(.began) {
             columnSwipe.began()
@@ -191,38 +206,33 @@ struct PopoverRootView: View {
         select(next)
     }
 
-    /// Changes column with the list sliding the way you went. Used by the swipe and by the
-    /// dropdown, so picking "Done" from the menu travels the same direction as swiping to it.
+    /// Used by the swipe and by the dropdown alike, so picking "Done" from the menu travels the
+    /// same direction as swiping to it.
+    ///
+    /// Deliberately not wrapped in `withAnimation`: see the comment on the content's transition.
     private func select(_ column: BoardColumn) {
         if let from = store.scope.flatMap({ store.columns.firstIndex(of: $0) }),
            let to = store.columns.firstIndex(of: column) {
             columnGoesForward = to > from
         }
-        withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
-            store.scope = column
-        }
+        store.scope = column
     }
 
-    /// The count sits beside the menu rather than inside its label: a `Menu` in the borderless
-    /// style renders only the first view of a composed label, so a badge and a name together left
-    /// the name invisible. Outside the menu it can be a real badge again, and it still reads in
-    /// front of the column name and before the chevron.
+    /// Column name, then the count, then the chevron, in that order and inside one control.
+    ///
+    /// This is why the menu style is `.button` and not `.borderlessButton`. A borderless `Menu`
+    /// renders only the FIRST view of a composed label, so every earlier attempt at putting the
+    /// badge in here silently dropped either the count or the column name. `.button` renders the
+    /// whole label, `.buttonStyle(.plain)` takes the border back off, and `.menuIndicator(.hidden)`
+    /// removes the system chevron so ours can sit after the badge instead of before it.
+    /// Going back is given longer than going in. At equal durations it reads as faster: the list
+    /// is already built and lands instantly, while an issue is still filling in as it arrives.
+    private var navigationAnimation: Animation? {
+        guard !reduceMotion else { return nil }
+        return .snappy(duration: store.selectedKey == nil ? 0.32 : 0.22)
+    }
+
     private var scopePicker: some View {
-        HStack(spacing: 5) {
-            if store.badgeCount > 0 {
-                Text("\(store.badgeCount)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-                    .help("\(store.badgeCount) issues in this column")
-            }
-            columnMenu
-        }
-    }
-
-    private var columnMenu: some View {
         Menu {
             ForEach(store.columns) { column in
                 Button {
@@ -232,21 +242,35 @@ struct PopoverRootView: View {
                 }
             }
         } label: {
-            // No hand-drawn chevron here. `.menuIndicator(.hidden)` does not take on the
-            // borderless menu style, so a custom one just ends up as a second arrow in the wrong
-            // place; the system indicator is left to do its own job.
-            // The count sits with the column name rather than in a badge of its own off to the
-            // left: it is a fact about this column, and two separate things in the header read as
-            // two unrelated things.
-            // One `Text`, not a stack of them. A `Menu` in the borderless style renders only the
-            // first view of a composed label, so the count drew and the column name vanished.
-            Text(store.scope?.name ?? "Loading board...")
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
+            HStack(spacing: 5) {
+                Text(store.scope?.name ?? "Loading board...")
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+
+                if store.badgeCount > 0 {
+                    Text("\(store.badgeCount)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+
+                // Hand-drawn, because the system indicator cannot be moved to the far side of the
+                // badge. "chevron.down" is a real symbol name: a misspelled one draws nothing and
+                // still builds.
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(store.columns.isEmpty)
+        .help("\(store.badgeCount) issues in this column")
         .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(store.badgeCount) issues. Choose a board column.")
     }
 

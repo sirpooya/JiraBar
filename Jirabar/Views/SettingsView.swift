@@ -8,7 +8,6 @@ struct SettingsView: View {
     @AppStorage(Keys.baseURL) private var baseURLText = Keys.defaultBaseURL
     @AppStorage(Keys.pollMinutes) private var pollMinutes = 3
     @AppStorage(Keys.monochromeIcon) private var monochromeIcon = false
-    @AppStorage(Keys.showBadgeCount) private var showBadgeCount = true
     @AppStorage(Keys.notifyOnNewIssue) private var notifyOnNewIssue = true
     @AppStorage(Keys.showDescription) private var showDescription = true
     @AppStorage(Keys.showComments) private var showComments = true
@@ -255,10 +254,6 @@ struct SettingsView: View {
 
     private var menuBarSection: some View {
         SettingsSection("Menu Bar") {
-            SettingsRow("Show the issue count") {
-                SettingsSwitch(isOn: $showBadgeCount)
-            }
-            SettingsDivider()
             SettingsRow("Monochrome icon",
                         subtitle: "Uses the menu bar's own color instead of the status colors, which turn orange when something is due today and red when something is overdue.") {
                 SettingsSwitch(isOn: $monochromeIcon)

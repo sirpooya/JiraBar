@@ -168,11 +168,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the badge count and the urgency colour, comes from the store through `observeStore`.
     private struct IconSettings: Equatable {
         let monochrome: Bool
-        let showCount: Bool
 
         init(_ defaults: UserDefaults) {
             monochrome = defaults.bool(forKey: Keys.monochromeIcon)
-            showCount = defaults.bool(forKey: Keys.showBadgeCount)
         }
     }
 

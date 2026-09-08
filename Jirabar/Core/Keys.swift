@@ -11,7 +11,6 @@ enum Keys {
     static let baseURL = "in.pooya.ticketbar.baseURL"
     static let pollMinutes = "in.pooya.ticketbar.pollMinutes"
     static let monochromeIcon = "in.pooya.ticketbar.monochromeIcon"
-    static let showBadgeCount = "in.pooya.ticketbar.showBadgeCount"
     static let notifyOnNewIssue = "in.pooya.ticketbar.notifyOnNewIssue"
     static let showDescription = "in.pooya.ticketbar.showDescription"
     static let showComments = "in.pooya.ticketbar.showComments"
@@ -46,7 +45,6 @@ enum Keys {
             baseURL: defaultBaseURL,
             pollMinutes: 3,
             monochromeIcon: false,
-            showBadgeCount: true,
             notifyOnNewIssue: true,
             showDescription: true,
             showComments: true,

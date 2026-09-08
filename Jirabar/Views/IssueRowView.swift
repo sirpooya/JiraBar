@@ -31,7 +31,7 @@ struct IssueRowView: View {
                                  label: issue.fields.issuetype?.name,
                                  store: store)
                         Text(issue.key)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
                             .foregroundStyle(.secondary)
                         if showsStatus {
                             StatusPill(name: issue.statusName,
@@ -39,6 +39,11 @@ struct IssueRowView: View {
                         }
                         if let platform = issue.platform {
                             PlatformPill(platform: platform)
+                        }
+                        // The story this belongs to. A task on its own says what changed but not
+                        // what it is part of, and the board groups them by the story.
+                        if let parent = issue.fields.parent {
+                            ParentTag(parent: parent)
                         }
                         Spacer(minLength: 0)
                         DueBadge(due: issue.dueDate)
@@ -187,6 +192,24 @@ struct JiraIcon: View {
             .resizable()
             .frame(width: side, height: side)
             .help(label ?? "")
+    }
+}
+
+/// The parent story on a task's row, named rather than keyed: "DDS-410" identifies nothing at a
+/// glance, and the summary is what anyone actually recognises. The key is in the tooltip.
+struct ParentTag: View {
+    let parent: JiraIssue.Parent
+
+    var body: some View {
+        Text(parent.fields?.summary ?? parent.key)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .help("\(parent.key)  \(parent.fields?.summary ?? "")")
     }
 }
 

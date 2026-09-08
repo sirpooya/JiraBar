@@ -35,7 +35,19 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
 glyph is the supplied `MenuBarIcon.png`, cropped to its ink and tinted per draw so one grayscale
 file serves template and colour modes. The app icon is an Icon Composer `AppIcon.icon`, which is
 the first app icon this project has ever had. The app is `.accessory` permanently and never shows
-in the Dock, detached or not. 96 tests green, and everything is **uncommitted**.
+in the Dock, detached or not. 100 tests green, and everything is **uncommitted**.
+
+The panel then grew the parts of an issue it was missing: Jira's own type and priority icons, the
+side panel fields (parent story, epic link, components, labels, story points), a push between the
+list and an issue and a fade between columns, and a header whose count sits with the column name.
+Two things are built but still **unproven against the live instance**: pasting an image with
+`Cmd+V`, and emoji reactions, whose endpoint 404s and is now attempted four ways. Both write to
+stderr in DEBUG; one click each settles them.
+
+**The user runs `/Applications/Jirabar.app`, not the DerivedData build.** Relaunching the built
+binary alone means they are looking at the installed copy while you report success on a build
+nobody can see. Quit first, `ditto` the fresh bundle over `/Applications/Jirabar.app`, then open
+that, because replacing a bundle under a running process invalidates its signature.
 Two cautions carried into this state. First, the naming and the icon are both Atlassian's
 trademark and are only safe while this stays internal; see the Naming section. Second, an untracked
 file (`Core/ColumnGlyph.swift`, plus four tests) was deleted mid-session by something outside
@@ -183,11 +195,17 @@ APP=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Jirabar.app" \
         -path "*/Build/Products/Debug/*" | head -1)
 pkill -x Jirabar; sleep 1
 rm -rf /Applications/Jirabar.app && cp -R "$APP" /Applications/Jirabar.app
-/Applications/Jirabar.app/Contents/MacOS/Jirabar 2>/tmp/jirabar.err &
+open -a /Applications/Jirabar.app
 ```
 `/Applications/Jirabar.app` is the copy the user actually clicks, so verifying a DerivedData build
-verifies a bundle they are not running. Launch the binary directly rather than with `open` so
-stderr can be captured and read back. Quit the running app before replacing the bundle: overwriting
+verifies a bundle they are not running. **Launch with `open`, never by exec'ing
+`Contents/MacOS/Jirabar`.** 2026-09-09: exec'ing the binary from a Claude Bash tool starts it
+outside the user's GUI login session, where the login keychain lookup fails, `TokenStore.hasToken`
+swallows the failure with `try?`, and the app draws the needs-token onboarding as though the token
+had been deleted. It had not been. Before believing that screen, check the item is still there with
+`security find-generic-password -s in.pooya.ticketbar.debug.pat`. The cost of `open` is that stderr
+goes to the unified log instead of a file; when a DEBUG line really is needed, exec the binary and
+accept the fake signed-out state rather than reporting it. Quit the running app before replacing the bundle: overwriting
 it under a live process invalidates its code signature. Copying to `/Applications` does not
 re-prompt for the token, because signing uses a real certificate and the designated requirement
 carries no path.
@@ -389,8 +407,10 @@ carries no path.
 - 2026-09-08 A **two-finger swipe right across the header** goes back to the column list. Read from
   a local `.scrollWheel` monitor, because `DragGesture` is a click and drag and a trackpad swipe
   arrives as a scroll event with precise deltas and a phase that no SwiftUI gesture reports. Two
-  guards: only in the top strip of the panel, and only when the movement is decisively sideways, so
-  scrolling the thread with a sideways drift never triggers it.
+  It is read anywhere on the issue, not just across its header, and the only guard is that the
+  gesture's whole travel must be further sideways than vertical, so scrolling the thread with a
+  sideways drift never triggers it. The cost of covering the whole page: a horizontal swipe over a
+  wide table or code block inside a comment goes back instead of scrolling that block sideways.
 - 2026-09-08 The move control is an **ellipsis**, and each destination in its menu is named after
   the **board column** that gathers the destination status. The column name because the dropdown
   says "Testing" where this workflow's transition says "Test", and two names for one place is one
@@ -408,17 +428,58 @@ carries no path.
   is block buffered, and the first attempt at logging the undocumented reaction calls produced an
   empty file because the buffer never flushed.
 
-- 2026-09-08 A **two-finger swipe across the list header steps through the board's columns**, left
+- 2026-09-08 A **two-finger swipe anywhere over the list steps through the board's columns**, left
   for the next and right for the previous, the same direction sense as the swipe back inside an
   issue (`ColumnPaging`). The ends hold rather than wrapping: a board is a line from backlog to
   done, and going from Done to Sprint Backlog on one more swipe reads as a glitch. Its monitor is
-  guarded on no issue being open, so a swipe over an issue still means go back.
+  guarded on no issue being open, so a swipe over an issue still means go back. It reads the whole
+  panel rather than the header strip it started as: the header is 56 points of a panel that is
+  mostly rows, so a swipe aimed at the list did nothing at all.
 
 - 2026-09-09 **A trackpad swipe is judged on the whole gesture's travel, never event by event**
   (`SwipeTracker`). The `.began` and `.ended` scroll events carry zero deltas, so testing each
   event for "more sideways than vertical" rejects the `.ended` event, `0 > 0` being false, and the
   gesture never completes: both swipes were dead on arrival for exactly this reason. Neither
   monitor consumes its events either, so the list and the comment thread still scroll normally.
+
+- 2026-09-09 Issue type and priority are drawn with **Jira's own icons**, chosen from the
+  `iconUrl` the server reports rather than from the display name, which is renamed and translated
+  per instance (`JiraIconAsset`). Two paths, and both are needed. The named files under
+  `/images/icons/{issuetypes,priorities}/*.svg` are **bundled** in `Assets.xcassets`, because
+  `NSImage` cannot decode SVG at runtime and an asset catalog converts it at build time. An
+  instance also picks its own avatar for a type, `/secure/viewavatar?avatarId=10318` for Task on
+  this one, which is a PNG no bundled name could ever match, so that is **fetched with the token**
+  like an avatar. Guessing file names is what this replaced: `story` and `task` were bundled and
+  every other type on the board silently drew nothing. An icon with neither is reported once on
+  stderr in DEBUG, so the missing one gets named instead of guessed at.
+- 2026-09-09 The fields down the side of an issue (Parent, Epic Link, Affects Version/s,
+  Component/s, Labels, Story Points) are read with `fields=*all` and **`expand=names`**, one
+  request when an issue is opened. Story Points and Tech Area are custom fields whose ids differ
+  per instance, so the server's own id to display name map is the only thing that can match them
+  and no `customfield_*` id appears in this app. Values arrive as every shape Jira has, a bare
+  string, a number, `{"name": ...}`, `{"value": ...}`, or an array of those, so they are decoded
+  through `JSONValue` without a matching Swift type. Component/s and Labels render as tag chips.
+- 2026-09-09 The issue count is a badge **beside** the column menu, never inside its label. A
+  `Menu` in the borderless style renders only the first view of a composed label, so a badge and
+  the column name together drew the badge and left the name invisible.
+- 2026-09-09 Opening an issue **pushes** it in from the trailing edge and going back reverses it,
+  by button or by swipe, because the two trees are entirely different. Changing column is a
+  **crossfade**, and must stay one: setting `store.scope` swaps the whole panel at once (the list
+  becomes the loading state, the header text and the count change), and animating that transaction
+  made SwiftUI interpolate every changed view to its own new position, so rows came apart and
+  avatars and half drawn text flew across the panel separately. The fade is attached to the content
+  with `.animation(value:)`, never `withAnimation` around the scope change. Both are off under
+  Reduce Motion.
+- 2026-09-09 In the detached window the **content area fills the window**, so the header stays at
+  the top and the footer at the bottom. The list already did this; the loading and empty states did
+  not, and the whole panel floated in the middle of a tall window with dead space above it.
+- 2026-09-09 A row is a type icon, the key, the platform tag and, for anything with a parent, the
+  **story it belongs to as a tag**, then the title. The parent is named by its summary rather than
+  its key: "DDS-410" identifies nothing at a glance, and the key is in the tooltip. It costs no
+  request, `parent` already being in the search's field list. Key and title are
+  both **regular** weight: everything semibold made the list one grey block with nothing leading.
+  The platform tag lives with the issue's other chips in the detail view, not in the header beside
+  the title, where it read as one of the buttons. There is no "Updated ... ago" line.
 
 ## Privacy (local-first)
 No telemetry, no analytics, no account. Network calls, exhaustively: `works.digikala.com` (or

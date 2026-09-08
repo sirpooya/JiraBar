@@ -55,19 +55,20 @@ enum StatusItemIcon {
     // Menu bar icons are 18pt tall inside a 22pt bar.
     private static let height: CGFloat = 18
     private static let glyphSize = NSSize(width: 15, height: 15)
-    private static let gap: CGFloat = 3
-    private static func countFont() -> NSFont { .systemFont(ofSize: 11, weight: .semibold) }
 
+    /// The icon is the glyph and nothing else. It carried the issue count beside it once; the
+    /// count belongs in the panel, where there is room to say what it counts, and a number in the
+    /// menu bar is a number with no label.
+    ///
     /// - Parameters:
     ///   - monochrome: the single user-facing switch. On means adaptive template rendering and no
     ///     status colors at all.
-    static func image(count: Int, urgency: Urgency, monochrome: Bool, showCount: Bool) -> NSImage {
-        let text = (showCount && count > 0) ? String(count) : nil
-        let size = intrinsicSize(for: text)
+    static func image(urgency: Urgency, monochrome: Bool) -> NSImage {
+        let size = intrinsicSize
 
         if monochrome {
             // Alpha is all that ships, so there is no point picking colors here.
-            let image = render(text: text, size: size, color: .black)
+            let image = render(size: size, color: .black)
             image.isTemplate = true
             return image
         }
@@ -76,7 +77,7 @@ enum StatusItemIcon {
             // Swift spelling is currentDrawing(); this is the appearance of the bar being drawn,
             // which is the only appearance that matters.
             let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            render(text: text, size: size, color: urgency.color(isDark: isDark))
+            render(size: size, color: urgency.color(isDark: isDark))
                 .draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
             return true
         }
@@ -84,17 +85,13 @@ enum StatusItemIcon {
         return dynamic
     }
 
-    static func intrinsicSize(for text: String?) -> NSSize {
-        var width = glyphSize.width
-        if let text {
-            width += gap + ceil(text.size(withAttributes: [.font: countFont()]).width)
-        }
-        return NSSize(width: ceil(width), height: height)
+    static var intrinsicSize: NSSize {
+        NSSize(width: ceil(glyphSize.width), height: height)
     }
 
     /// One drawing routine for both modes. Everything it draws uses `color`, so there is no path
     /// where a literal black glyph survives into color mode.
-    private static func render(text: String?, size: NSSize, color: NSColor) -> NSImage {
+    private static func render(size: NSSize, color: NSColor) -> NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
 
@@ -113,17 +110,6 @@ enum StatusItemIcon {
             leading.fill()
             color.withAlphaComponent(color.alphaComponent * secondaryAlpha).setFill()
             trailing.fill()
-        }
-
-        if let text {
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: countFont(),
-                .foregroundColor: color,
-            ]
-            let textSize = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: glyphRect.maxX + gap,
-                                  y: ((size.height - textSize.height) / 2).rounded()),
-                      withAttributes: attributes)
         }
 
         image.unlockFocus()

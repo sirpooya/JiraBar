@@ -201,10 +201,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let defaults = UserDefaults.standard
         let issues = store.state.issues
         let image = StatusItemIcon.image(
-            count: store.badgeCount,
             urgency: StatusItemIcon.Urgency.from(issues),
-            monochrome: defaults.bool(forKey: Keys.monochromeIcon),
-            showCount: defaults.bool(forKey: Keys.showBadgeCount))
+            monochrome: defaults.bool(forKey: Keys.monochromeIcon))
         button.image = image
         button.setAccessibilityLabel(accessibilityLabel())
         button.toolTip = accessibilityLabel()

@@ -21,11 +21,6 @@ struct IssueDetailView: View {
     private static let pickerWidth: CGFloat = 232
     /// How far right a two-finger swipe has to travel to count as going back.
     private static let swipeBackThreshold: CGFloat = 40
-    /// The strip at the top of the panel the swipe is read in. Generous enough to cover the header
-    /// in the popover and in the detached window, where the app's own header sits below the
-    /// window's title bar, and small enough to leave a horizontal swipe over a wide table or code
-    /// block in the thread alone.
-    private static let swipeStripHeight: CGFloat = 120
 
     @State private var swipeMonitor: Any?
     @State private var swipeBack = SwipeTracker()
@@ -295,8 +290,9 @@ struct IssueDetailView: View {
     /// link inside a web view, and eight reactions is what a tracker actually sees used.
     // MARK: - Swipe back
 
-    /// A two-finger swipe to the right across the header goes back to the column, the way a swipe
-    /// back works elsewhere on the Mac.
+    /// A two-finger swipe to the right goes back to the column, the way a swipe back works
+    /// elsewhere on the Mac. Anywhere on the issue, not only across its header, which was a strip
+    /// at the top of a page that is mostly comment thread.
     ///
     /// Read from a local scroll monitor rather than a SwiftUI gesture: `DragGesture` is a click and
     /// drag, and a trackpad swipe arrives as a scroll event with precise deltas and a phase, which
@@ -317,9 +313,6 @@ struct IssueDetailView: View {
     /// acts once it has finished. Whether it counts is judged from the whole gesture's travel,
     /// because the `.began` and `.ended` events carry no deltas at all. See `SwipeTracker`.
     private func handleSwipeBack(_ event: NSEvent) -> Bool {
-        guard let contentHeight = event.window?.contentView?.bounds.height,
-              event.locationInWindow.y > contentHeight - Self.swipeStripHeight else { return false }
-
         if event.phase.contains(.began) {
             swipeBack.began()
         } else if event.phase.contains(.changed) {
@@ -435,12 +428,17 @@ struct JiraIconChip: View {
     @Bindable var store: IssueStore
 
     var body: some View {
+        // Same capsule as every other chip in this row. Without it the type and the priority were
+        // the only two that sat bare on the background, which read as a different kind of thing.
         HStack(spacing: 4) {
             JiraIcon(url: url, kind: kind, label: text, store: store)
             Text(text)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(Color.primary.opacity(0.07)))
     }
 }
 

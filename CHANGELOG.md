@@ -35,6 +35,7 @@ section when a release is cut.
 - Jira's issue type icon leads every row in the list
 - A task or sub-task shows its parent story, and an epic link when it has one
 - Switching column slides the list in the direction you went, by swipe or from the dropdown
+- A task's row carries the story it belongs to as a tag
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -58,9 +59,14 @@ section when a release is cut.
 - The platform tag moved out of the issue header down to the row of chips with the issue's other attributes
 - The issue count sits with the column name in the header instead of in a badge of its own
 - Removed the standing "Paste a screenshot to attach it" hint under the comment box, and widened the gap between the composer and the comment thread.
+- The issue count badge now sits after the column name in the header instead of in front of it.
+- Two-finger swipes work anywhere on the panel: sideways over the list moves between columns, and to the right on an issue goes back
+- Type and priority sit in the same badge as the chips beside them
+- Switching column slides the list the way you swiped, and going back to the list is no longer quicker than going in
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
+- The issue count beside the menu bar icon, and its setting
 
 ### Fixed
 - Comments no longer all show as edited when the server sends no updated timestamp
@@ -82,4 +88,6 @@ section when a release is cut.
 - The move menu no longer shows two emoji per row on a board whose columns are already named with one
 - More issue types show their icon, not only stories and tasks
 - Issue types whose icon this Jira serves as its own avatar, Task among them, now show it
+- Switching column fades instead of tearing the list apart mid animation
+- The detached window fills with the panel instead of leaving it floating in the middle
 
