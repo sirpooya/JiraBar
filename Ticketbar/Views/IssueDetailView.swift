@@ -84,10 +84,14 @@ struct IssueDetailView: View {
     /// a reference number in the most prominent slot on screen and pushed the thing you actually
     /// read down a line. The key is still one click away through the browser link.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
+                    // A fixed box, so the chevron sits on the same vertical line as the buttons
+                    // at the other end of the row whatever the title does.
+                    .frame(width: 14, height: 20)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back to the list")
@@ -103,9 +107,6 @@ struct IssueDetailView: View {
 
             if let platform = issue.platform {
                 PlatformPill(platform: platform)
-                    // Centre the capsule on the title's first line. Left to the default the pill
-                    // hangs low, because its own baseline sits inside its vertical padding.
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
 
             Spacer(minLength: 6)
@@ -262,7 +263,9 @@ struct IssueDetailView: View {
                     }
                 }
             } label: {
-                Image(systemName: "rectangle.3.group")
+                // A round arrow, not the board grid this used to be: the control sends the issue
+                // onward, and the circle keeps it distinct from the square browser arrow beside it.
+                Image(systemName: "arrow.forward.circle")
                     .font(.system(size: 12, weight: .medium))
             }
             .menuStyle(.borderlessButton)

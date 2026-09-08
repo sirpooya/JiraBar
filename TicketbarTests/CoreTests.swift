@@ -189,6 +189,24 @@ final class DecodingTests: XCTestCase {
         XCTAssertNil(TextDirection.firstStrong(in: ""))
     }
 
+    /// The bug this replaced: any text on the pasteboard beat the image, so a screenshot copied
+    /// out of a browser pasted its file name and dropped the picture.
+    func testAPastedImageBeatsTheLabelThatCameWithIt() {
+        XCTAssertTrue(PasteRouting.prefersImage(hasImageData: true, text: nil))
+        XCTAssertTrue(PasteRouting.prefersImage(hasImageData: true, text: ""))
+        XCTAssertTrue(PasteRouting.prefersImage(hasImageData: true,
+                                                text: "pastedImage_9_6_2026__20_18_06_811.png"))
+        XCTAssertTrue(PasteRouting.prefersImage(hasImageData: true,
+                                                text: "https://works.digikala.com/x.png"))
+    }
+
+    func testPastedProseStaysTextAndAPlainTextPasteIsNeverAnImage() {
+        XCTAssertFalse(PasteRouting.prefersImage(hasImageData: true,
+                                                 text: "please check the spacing here"))
+        XCTAssertFalse(PasteRouting.prefersImage(hasImageData: false, text: "anything"))
+        XCTAssertFalse(PasteRouting.prefersImage(hasImageData: false, text: nil))
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

@@ -11,12 +11,15 @@ private final class PastingTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
+        let image = NSImage(pasteboard: pasteboard)
 
-        // Text wins when the clipboard carries both. Copying an image from a browser usually also
-        // puts its URL on the pasteboard, and silently uploading a screenshot when the user meant
-        // to paste a link would be worse than the reverse.
-        let hasText = pasteboard.string(forType: .string)?.isEmpty == false
-        if !hasText, let image = NSImage(pasteboard: pasteboard), let png = image.pngData() {
+        // The image wins unless the text beside it is real prose: see `PasteRouting`. The old
+        // rule let any text at all beat the image, so pasting a screenshot copied out of a
+        // browser or a design tool inserted its file name as a line of text and dropped the
+        // picture on the floor.
+        if PasteRouting.prefersImage(hasImageData: image != nil,
+                                     text: pasteboard.string(forType: .string)),
+           let png = image?.pngData() {
             onPasteImage?(png)
             return
         }

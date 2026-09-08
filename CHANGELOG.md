@@ -38,6 +38,7 @@ section when a release is cut.
 - The comment box grows with what you type, up to five lines, then scrolls
 - The add-a-reaction control is a neutral outline icon, not a smiling face that looked like a reaction you had already added
 - The detach control shows a window icon, and a menu bar icon to put it back, instead of the picture-in-picture pair
+- The move control shows a circled forward arrow instead of the board grid glyph
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -50,4 +51,6 @@ section when a release is cut.
 - The app no longer crashes while running: a window saving its frame triggered a menu bar icon redraw inside AppKit's layout pass, which AppKit aborts on
 - The detached window keeps its size when you move between the column list and an issue, and the content fills it instead of being capped at popover height
 - The platform pill no longer wraps mid-word when the header is tight
+- Pasting a screenshot attaches the image instead of inserting its file name as text
+- The back button, title and header buttons line up when an issue title wraps to two lines
 
