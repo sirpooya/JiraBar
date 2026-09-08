@@ -6,11 +6,43 @@ import SwiftUI
 /// A screenshot on the clipboard is the common case here: the team pastes UI captures into design
 /// issues constantly. `NSTextView` would otherwise drop the image on the floor, so paste is
 /// intercepted, the bytes handed up, and the caller uploads them as an attachment.
-private final class PastingTextView: NSTextView {
+/// Not private: the paste path is covered by tests, which need to build one of these.
+final class PastingTextView: NSTextView {
     var onPasteImage: ((Data) -> Void)?
+    /// Injected so a test can hand over a pasteboard of its own instead of the system one.
+    var pasteboardProvider: () -> NSPasteboard = { .general }
+
+    /// `Cmd+V` and friends, handled here rather than left to the main menu.
+    ///
+    /// AppKit dispatches the standard editing shortcuts through `NSApp.mainMenu`, and this app is
+    /// an accessory whose only scene is a `MenuBarExtra`: SwiftUI owns that menu and replaces
+    /// whatever the delegate installs, so an Edit menu added at launch did not survive. Pasting
+    /// silently did nothing, which looked like the image code failing when in truth `paste(_:)`
+    /// was never called at all.
+    ///
+    /// Guarded on first responder, so a composer that is on screen but not focused cannot swallow
+    /// a paste meant for something else.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard window?.firstResponder === self,
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch (flags, key) {
+        case (.command, "v"): paste(nil)
+        case (.command, "c"): copy(nil)
+        case (.command, "x"): cut(nil)
+        case (.command, "a"): selectAll(nil)
+        case (.command, "z"): undoManager?.undo()
+        case ([.command, .shift], "z"): undoManager?.redo()
+        default: return super.performKeyEquivalent(with: event)
+        }
+        return true
+    }
 
     override func paste(_ sender: Any?) {
-        let pasteboard = NSPasteboard.general
+        let pasteboard = pasteboardProvider()
         let image = NSImage(pasteboard: pasteboard)
 
         // The image wins unless the text beside it is real prose: see `PasteRouting`. The old

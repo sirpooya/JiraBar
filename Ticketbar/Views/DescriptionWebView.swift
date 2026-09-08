@@ -34,8 +34,12 @@ struct DescriptionWebView: NSViewRepresentable {
     var onEditComment: ((String) -> Void)?
     /// Called with (comment id, emoji codepoint) to toggle a reaction.
     var onToggleReaction: ((String, String) -> Void)?
-    /// Called with the comment id when the reaction picker is asked for.
+    /// Called with the comment id when the reaction picker is asked for, from the link. Used only
+    /// when the page's own click script did not run.
     var onPickReaction: ((String) -> Void)?
+    /// Called with the comment id and the chip's position inside this view, so the picker can open
+    /// against the chip that asked for it the way Jira's does.
+    var onPickReactionAt: ((String, CGPoint) -> Void)?
     @Binding var contentHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -44,6 +48,7 @@ struct DescriptionWebView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.userContentController.add(context.coordinator, name: Self.heightChannel)
+        configuration.userContentController.add(context.coordinator, name: Self.pickerChannel)
         let webView = NonScrollingWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
@@ -52,11 +57,15 @@ struct DescriptionWebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: heightChannel)
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: heightChannel)
+        controller.removeScriptMessageHandler(forName: pickerChannel)
     }
 
     /// The name the page posts its height on.
     static let heightChannel = "height"
+    /// The name the page posts a reaction chip's position on.
+    static let pickerChannel = "picker"
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         let document = Self.document(body: html, isDark: isDark)
@@ -85,9 +94,22 @@ struct DescriptionWebView: NSViewRepresentable {
         /// The load-time reading alone was a snapshot of a page that had not finished laying out.
         func userContentController(_ controller: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            guard message.name == DescriptionWebView.heightChannel,
-                  let height = message.body as? NSNumber else { return }
-            apply(CGFloat(height.doubleValue))
+            switch message.name {
+            case DescriptionWebView.heightChannel:
+                guard let height = message.body as? NSNumber else { return }
+                apply(CGFloat(height.doubleValue))
+
+            case DescriptionWebView.pickerChannel:
+                guard let payload = message.body as? [String: Any],
+                      let id = payload["id"] as? String,
+                      let x = payload["x"] as? NSNumber,
+                      let y = payload["y"] as? NSNumber else { return }
+                let point = CGPoint(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue))
+                DispatchQueue.main.async { self.parent.onPickReactionAt?(id, point) }
+
+            default:
+                break
+            }
         }
 
         private func apply(_ height: CGFloat) {
@@ -232,6 +254,25 @@ struct DescriptionWebView: NSViewRepresentable {
             }
             window.addEventListener('load', report);
             report();
+          })();
+
+          (function () {
+            var picker = window.webkit && window.webkit.messageHandlers
+                         && window.webkit.messageHandlers.\(pickerChannel);
+            if (!picker) { return; }
+            document.addEventListener('click', function (event) {
+              var target = event.target;
+              var chip = target && target.closest ? target.closest('a.jrp') : null;
+              if (!chip) { return; }
+              // Handled here, so the link never navigates and the position travels with the id.
+              event.preventDefault();
+              var box = chip.getBoundingClientRect();
+              picker.postMessage({
+                id: chip.getAttribute('data-comment') || '',
+                x: box.left,
+                y: box.bottom
+              });
+            }, true);
           })();
         </script></html>
         """

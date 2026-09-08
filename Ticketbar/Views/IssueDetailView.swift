@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct IssueDetailView: View {
@@ -14,6 +15,20 @@ struct IssueDetailView: View {
     @AppStorage(Keys.showMetadata) private var showMetadata = true
     @State private var descriptionHeight: CGFloat = 60
     @State private var commentsHeight: CGFloat = 40
+    /// Where in the thread the reaction chip that asked for the picker sits.
+    @State private var pickerAnchor: CGPoint = .zero
+
+    private static let pickerWidth: CGFloat = 232
+    /// How far right a two-finger swipe has to travel to count as going back.
+    private static let swipeBackThreshold: CGFloat = 40
+    /// The strip at the top of the panel the swipe is read in. Generous enough to cover the header
+    /// in the popover and in the detached window, where the app's own header sits below the
+    /// window's title bar, and small enough to leave a horizontal swipe over a wide table or code
+    /// block in the thread alone.
+    private static let swipeStripHeight: CGFloat = 120
+
+    @State private var swipeMonitor: Any?
+    @State private var swipeTravel: CGFloat = 0
     /// Chosen but not yet applied. Nothing reaches the server until Move is pressed.
     @State private var stagedTransition: JiraTransition?
 
@@ -70,6 +85,8 @@ struct IssueDetailView: View {
             .frame(maxHeight: fillsHeight ? .infinity : 340)
 
         }
+        .onAppear { installSwipeBack() }
+        .onDisappear { removeSwipeBack() }
         .task(id: issue.key) {
             stagedTransition = nil
             await store.loadTransitions(for: issue.key)
@@ -206,14 +223,33 @@ struct IssueDetailView: View {
                                            Task { await store.toggleReaction(emojiId, commentID: id, on: issue.key) }
                                        },
                                        onPickReaction: { id in
+                                           // No position came with it, so the picker opens at the
+                                           // top of the thread rather than nowhere.
                                            store.pickingReactionFor = id
+                                           pickerAnchor = .zero
+                                       },
+                                       onPickReactionAt: { id, point in
+                                           store.pickingReactionFor = id
+                                           pickerAnchor = point
                                        },
                                        contentHeight: $commentsHeight)
                         .frame(height: commentsHeight)
-
-                    if let picking = store.pickingReactionFor {
-                        reactionPicker(for: picking)
-                    }
+                        // Floating over the thread, against the chip that asked for it, the way
+                        // Jira does it. It used to be appended after the whole thread, which on
+                        // anything but a short one put it far below the fold: clicking the chip
+                        // looked like it did nothing at all.
+                        .overlay(alignment: .topLeading) {
+                            if let picking = store.pickingReactionFor {
+                                GeometryReader { proxy in
+                                    reactionPicker(for: picking)
+                                        .frame(width: Self.pickerWidth)
+                                        .offset(x: clamp(pickerAnchor.x - 6,
+                                                         upTo: proxy.size.width - Self.pickerWidth),
+                                                y: clamp(pickerAnchor.y + 4,
+                                                         upTo: proxy.size.height - 30))
+                                }
+                            }
+                        }
                 }
             }
         }
@@ -221,6 +257,63 @@ struct IssueDetailView: View {
 
     /// A short palette rather than the system emoji panel: the panel cannot be anchored to a
     /// link inside a web view, and eight reactions is what a tracker actually sees used.
+    // MARK: - Swipe back
+
+    /// A two-finger swipe to the right across the header goes back to the column, the way a swipe
+    /// back works elsewhere on the Mac.
+    ///
+    /// Read from a local scroll monitor rather than a SwiftUI gesture: `DragGesture` is a click and
+    /// drag, and a trackpad swipe arrives as a scroll event with precise deltas and a phase, which
+    /// no SwiftUI gesture reports.
+    private func installSwipeBack() {
+        guard swipeMonitor == nil else { return }
+        swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            handleSwipeBack(event) ? nil : event
+        }
+    }
+
+    private func removeSwipeBack() {
+        if let swipeMonitor { NSEvent.removeMonitor(swipeMonitor) }
+        swipeMonitor = nil
+        swipeTravel = 0
+    }
+
+    /// True when the event was consumed as part of a back swipe.
+    private func handleSwipeBack(_ event: NSEvent) -> Bool {
+        guard let contentHeight = event.window?.contentView?.bounds.height,
+              event.locationInWindow.y > contentHeight - Self.swipeStripHeight else { return false }
+        // Decisively sideways, so scrolling the thread with a slight sideways drift never counts.
+        guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return false }
+
+        if event.phase.contains(.began) {
+            swipeTravel = 0
+            return true
+        }
+        if event.phase.contains(.changed) {
+            swipeTravel += event.scrollingDeltaX
+            return true
+        }
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            let travelled = swipeTravel
+            swipeTravel = 0
+            if travelled > Self.swipeBackThreshold { onBack() }
+            return true
+        }
+        // A mouse wheel, or any device that reports no phase at all: one decisive push.
+        if event.phase.isEmpty, event.momentumPhase.isEmpty,
+           event.scrollingDeltaX > Self.swipeBackThreshold {
+            onBack()
+            return true
+        }
+        return false
+    }
+
+    /// Keeps the picker inside the thread's own box, whichever chip was clicked.
+    private func clamp(_ value: CGFloat, upTo limit: CGFloat) -> CGFloat {
+        guard limit > 0 else { return 0 }
+        return min(max(0, value), limit)
+    }
+
     private func reactionPicker(for commentID: String) -> some View {
         HStack(spacing: 4) {
             ForEach(JiraReaction.palette, id: \.self) { emoji in
@@ -245,8 +338,12 @@ struct IssueDetailView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(0.07)))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.regularMaterial))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10)))
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
     }
 
     /// Moving the issue, as one compact control in the header.

@@ -217,7 +217,10 @@ extension JiraComment {
                         + "\(reaction.emoji) \(reaction.total)</a>"
                 }
                 .joined()
-            chips += "<a class=\"jrp\" href=\"\(actionScheme)://picker/\(comment.id)\" "
+            // `data-comment` as well as the href: the page posts the chip's position so the
+            // picker can open beside it, and falls back to the link if that script never runs.
+            chips += "<a class=\"jrp\" data-comment=\"\(comment.id)\" "
+                + "href=\"\(actionScheme)://picker/\(comment.id)\" "
                 + "title=\"Add a reaction\">\(addReactionGlyph)</a>"
 
             var actions = "<div class=\"jce\">\(chips)"

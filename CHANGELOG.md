@@ -27,6 +27,7 @@ section when a release is cut.
 - The assignee's avatar on the trailing side of each issue row, fetched with your token and falling back to their initials
 - A placeholder in the avatar slot for an unassigned issue, and initials for anyone who has never uploaded an avatar
 - The comment box lays itself out right to left when the draft starts in Persian, and back again when it starts in English
+- A two-finger swipe right across an issue's header goes back to the column list
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -54,4 +55,7 @@ section when a release is cut.
 - Pasting a screenshot attaches the image instead of inserting its file name as text
 - The back button, title and header buttons line up when an issue title wraps to two lines
 - Images attached to a comment or a description now show, fetched with your token and inlined, instead of appearing as a broken icon with the file name
+- Cmd+V works in the comment box, so a screenshot on the clipboard actually attaches
+- The detached window can no longer be dragged narrower than the panel, and a window saved too narrow by an earlier build is widened when it reopens
+- The add-a-reaction chip opens the emoji picker beside the comment you clicked, instead of placing it below the whole thread where it could not be seen
 

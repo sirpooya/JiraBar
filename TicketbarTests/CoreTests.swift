@@ -233,6 +233,63 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(HTMLImages.mimeType(forPath: "/a/b/thing"), "image/png")
     }
 
+    /// The whole paste chain except AppKit's own dispatch: a Cmd+V key equivalent reaching the
+    /// text view, the pasteboard being read, and the image coming back out as PNG bytes.
+    ///
+    /// This is the bug that survived two attempted fixes. `paste(_:)` was never being called,
+    /// because an accessory app whose only scene is a MenuBarExtra does not keep an Edit menu for
+    /// AppKit to dispatch the shortcut through.
+    @MainActor
+    func testCommandVReachesTheTextViewAndYieldsTheImage() throws {
+        let board = NSPasteboard(name: NSPasteboard.Name("ticketbar.tests.paste"))
+        board.clearContents()
+        let image = NSImage(size: NSSize(width: 4, height: 4))
+        image.lockFocus()
+        NSColor.red.drawSwatch(in: NSRect(x: 0, y: 0, width: 4, height: 4))
+        image.unlockFocus()
+        board.setData(try XCTUnwrap(image.pngData()), forType: .png)
+
+        var pasted: Data?
+        let view = PastingTextView()
+        view.pasteboardProvider = { board }
+        view.onPasteImage = { pasted = $0 }
+
+        // A window, because the view only claims the shortcut when it is the first responder.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 80),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView?.addSubview(view)
+        view.frame = NSRect(x: 0, y: 0, width: 200, height: 80)
+        XCTAssertTrue(window.makeFirstResponder(view))
+
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown,
+                                                   location: .zero,
+                                                   modifierFlags: .command,
+                                                   timestamp: 0,
+                                                   windowNumber: window.windowNumber,
+                                                   context: nil,
+                                                   characters: "v",
+                                                   charactersIgnoringModifiers: "v",
+                                                   isARepeat: false,
+                                                   keyCode: 9))
+        XCTAssertTrue(view.performKeyEquivalent(with: event), "Cmd+V must be claimed by the view")
+        XCTAssertNotNil(pasted, "the image on the pasteboard must come back as PNG bytes")
+    }
+
+    /// The chip carries its comment id as an attribute as well as in the link, because the page
+    /// posts the id with the chip's position so the picker can open beside it.
+    func testTheReactionChipCarriesItsCommentIdForThePageScript() {
+        let json = """
+        {"comments":[{"id":"11","author":{"name":"pooya","displayName":"Pouya Kamel"},
+         "renderedBody":"<p>hi</p>","created":"2026-09-08T11:04:33.000+0330"}]}
+        """.data(using: .utf8)!
+        let thread = try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+        let html = JiraComment.composedHTML(thread)
+
+        XCTAssertTrue(html.contains("data-comment=\"11\""))
+        XCTAssertTrue(html.contains("\(JiraComment.actionScheme)://picker/11"),
+                      "the link stays as the fallback for when the script does not run")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

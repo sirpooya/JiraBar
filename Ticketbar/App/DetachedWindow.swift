@@ -14,8 +14,9 @@ import SwiftUI
 final class DetachedWindow: NSObject, NSWindowDelegate {
     static let shared = DetachedWindow()
 
-    /// Matches the panel's own fixed width in `PopoverRootView`.
+    /// Matches the panel's own minimum width in `PopoverRootView`.
     private static let width: CGFloat = 380
+    private static let minHeight: CGFloat = 260
 
     private var window: NSWindow?
     private var onClose: (() -> Void)?
@@ -50,7 +51,7 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         // 380 is the floor, not the ceiling: the panel fills this window now, so dragging it
         // wider gives the comment thread more room instead of adding empty margin. A saved frame
         // wider than the old fixed width restores intact rather than being clamped back.
-        window.contentMinSize = NSSize(width: Self.width, height: 260)
+        window.contentMinSize = NSSize(width: Self.width, height: Self.minHeight)
         window.contentMaxSize = NSSize(width: 1200, height: 2000)
         window.setContentSize(NSSize(width: Self.width, height: 520))
         window.titlebarAppearsTransparent = true
@@ -62,6 +63,9 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         window.delegate = self
         // Remembers where it was put, per Mac.
         window.setFrameAutosaveName("ticketbar.detached")
+        // Restoring an autosaved frame does not consult the minimum, so a frame saved by a build
+        // that had no minimum comes back too narrow and clips the panel. Widen it on the way in.
+        clampToMinimum(window)
         if window.frame.origin == .zero { window.center() }
         window.makeKeyAndOrderFront(nil)
 
@@ -70,6 +74,35 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
 
     func close() {
         window?.close()
+    }
+
+    /// The panel does not reflow below 380 points, it clips, so the window must not go there.
+    ///
+    /// `contentMinSize` alone did not hold it: with `sizingOptions` empty the content imposes no
+    /// constraints of its own, and the drag went straight past the minimum. This is the hook AppKit
+    /// asks before every resize, so there is nowhere for it to slip through.
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let floor = Self.minimumFrameSize(for: sender)
+        return NSSize(width: max(frameSize.width, floor.width),
+                      height: max(frameSize.height, floor.height))
+    }
+
+    private func clampToMinimum(_ window: NSWindow) {
+        let floor = Self.minimumFrameSize(for: window)
+        guard window.frame.width < floor.width || window.frame.height < floor.height else { return }
+        var frame = window.frame
+        // Grown from the top-left, which is where the title bar is: the window stays where the
+        // user put it rather than sliding up the screen.
+        frame.origin.y -= max(0, floor.height - frame.height)
+        frame.size.width = max(frame.width, floor.width)
+        frame.size.height = max(frame.height, floor.height)
+        window.setFrame(frame, display: false)
+    }
+
+    /// The content minimum expressed as a frame, so the title bar is counted.
+    private static func minimumFrameSize(for window: NSWindow) -> NSSize {
+        let content = NSRect(origin: .zero, size: NSSize(width: width, height: minHeight))
+        return window.frameRect(forContentRect: content).size
     }
 
     func windowWillClose(_ notification: Notification) {
