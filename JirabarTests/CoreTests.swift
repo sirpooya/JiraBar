@@ -1,5 +1,5 @@
 import XCTest
-@testable import Ticketbar
+@testable import Jirabar
 
 // MARK: - The rule this app exists to get right
 
@@ -290,6 +290,112 @@ final class DecodingTests: XCTestCase {
                       "the link stays as the fallback for when the script does not run")
     }
 
+
+
+
+    /// The menu names the board column, which is what the dropdown at the top of the panel says.
+    func testADestinationIsNamedAfterTheColumnThatGathersIt() {
+        let columns = [BoardColumn(name: "Testing", statusIDs: ["10005", "10006"]),
+                       BoardColumn(name: "Done", statusIDs: ["10007"])]
+        XCTAssertEqual(BoardColumn.name(forStatusID: "10006", in: columns), "Testing")
+        XCTAssertNil(BoardColumn.name(forStatusID: "99999", in: columns))
+        XCTAssertNil(BoardColumn.name(forStatusID: nil, in: columns))
+    }
+
+    /// Swiping across the header steps through the board's columns.
+    func testSwipingStepsThroughTheColumnsAndTheEndsHold() {
+        let columns = [BoardColumn(name: "Sprint Backlog", statusIDs: ["1"]),
+                       BoardColumn(name: "Testing", statusIDs: ["2"]),
+                       BoardColumn(name: "Done", statusIDs: ["3"])]
+
+        XCTAssertEqual(ColumnPaging.column(after: columns[0], in: columns, forward: true)?.name,
+                       "Testing")
+        XCTAssertEqual(ColumnPaging.column(after: columns[1], in: columns, forward: false)?.name,
+                       "Sprint Backlog")
+        XCTAssertNil(ColumnPaging.column(after: columns[2], in: columns, forward: true),
+                     "the last column holds rather than wrapping round to the first")
+        XCTAssertNil(ColumnPaging.column(after: columns[0], in: columns, forward: false))
+    }
+
+    func testPagingSurvivesNoColumnBeingChosenYet() {
+        let columns = [BoardColumn(name: "Testing", statusIDs: ["2"])]
+        XCTAssertEqual(ColumnPaging.column(after: nil, in: columns, forward: true)?.name, "Testing")
+        XCTAssertNil(ColumnPaging.column(after: nil, in: [], forward: true))
+    }
+
+
+    /// A trackpad swipe's first and last events carry no deltas at all, which is why judging each
+    /// event on its own never completed the gesture.
+    func testASwipeIsJudgedOnItsWholeTravelNotOnEachEvent() {
+        var tracker = SwipeTracker()
+        tracker.began()
+        tracker.moved(deltaX: 30, deltaY: 2)
+        tracker.moved(deltaX: 30, deltaY: -1)
+        XCTAssertEqual(tracker.ended(threshold: 40), .right)
+
+        tracker.began()
+        tracker.moved(deltaX: -60, deltaY: 3)
+        XCTAssertEqual(tracker.ended(threshold: 40), .left)
+    }
+
+    func testAMostlyVerticalOrTooSmallSwipeIsNotOne() {
+        var tracker = SwipeTracker()
+        tracker.began()
+        tracker.moved(deltaX: 50, deltaY: 200)
+        XCTAssertNil(tracker.ended(threshold: 40), "scrolling with a sideways drift is not a swipe")
+
+        tracker.began()
+        tracker.moved(deltaX: 12, deltaY: 0)
+        XCTAssertNil(tracker.ended(threshold: 40))
+    }
+
+    /// A gesture that did nothing must not leak its travel into the next one.
+    func testTheTrackerResetsEvenWhenTheSwipeDidNotCount() {
+        var tracker = SwipeTracker()
+        tracker.began()
+        tracker.moved(deltaX: 30, deltaY: 0)
+        XCTAssertNil(tracker.ended(threshold: 40))
+
+        tracker.began()
+        tracker.moved(deltaX: 30, deltaY: 0)
+        XCTAssertNil(tracker.ended(threshold: 40), "the first swipe's travel must not carry over")
+    }
+
+    /// Jira sends every one of these shapes for the fields down the side of an issue.
+    func testEveryFieldShapeJiraSendsBecomesOneReadableLine() throws {
+        func value(_ raw: String) throws -> JSONValue {
+            try JSONDecoder().decode(JSONValue.self, from: raw.data(using: .utf8)!)
+        }
+        XCTAssertEqual(try value("4").displayText, "4", "story points are 4, not 4.0")
+        XCTAssertEqual(try value("2.5").displayText, "2.5")
+        XCTAssertEqual(try value("\"Core\"").displayText, "Core")
+        XCTAssertEqual(try value("[\"Core\",\"PDP\"]").displayText, "Core, PDP")
+        XCTAssertEqual(try value("{\"name\":\"PDP\"}").displayText, "PDP")
+        XCTAssertEqual(try value("{\"value\":\"Mobile\"}").displayText, "Mobile")
+        XCTAssertEqual(try value("[{\"name\":\"PDP\"},{\"name\":\"Cart\"}]").displayText, "PDP, Cart")
+        XCTAssertNil(try value("null").displayText)
+        XCTAssertNil(try value("[]").displayText, "an empty list is a row that says nothing")
+        XCTAssertNil(try value("\"   \"").displayText)
+    }
+
+    /// The custom field ids differ per instance, so the rows are matched on the display names the
+    /// server itself reports.
+    func testFieldRowsAreMatchedByNameNotByCustomFieldID() throws {
+        let json = """
+        {"names":{"customfield_10004":"Story Points","components":"Component/s",
+                  "labels":"Labels","versions":"Affects Version/s","summary":"Summary"},
+         "fields":{"customfield_10004":4,"components":[{"name":"PDP"}],"labels":["Core"],
+                   "versions":[],"summary":"Table"}}
+        """.data(using: .utf8)!
+        let response = try JSONDecoder().decode(IssueFieldsResponse.self, from: json)
+        let rows = IssueFieldRows.rows(fields: response.fields ?? [:], names: response.names ?? [:])
+
+        XCTAssertEqual(rows, [IssueFieldRow(label: "Component/s", value: "PDP"),
+                              IssueFieldRow(label: "Labels", value: "Core"),
+                              IssueFieldRow(label: "Story Points", value: "4")],
+                       "empty Affects Version/s is dropped, and Summary is not a side panel field")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {
@@ -521,7 +627,7 @@ final class CommentAuthoringTests: XCTestCase {
         return try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
     }
 
-    /// The rule the user called very important: Ticketbar can add and edit comments, never delete
+    /// The rule the user called very important: Jirabar can add and edit comments, never delete
     /// one. A delete control in a popover that opens under the cursor is one stray click from
     /// destroying somebody's comment, and Jira does not undo it.
     func testTheRenderedThreadNeverOffersDelete() {

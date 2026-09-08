@@ -26,7 +26,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         hosting.sizingOptions = []
 
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Ticketbar Settings"
+        window.title = "Jirabar Settings"
         // Not resizable: the panes are laid out for one width.
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: SettingsMetrics.windowWidth, height: 560))

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PopoverRootView: View {
@@ -10,6 +11,13 @@ struct PopoverRootView: View {
     let isDetached: Bool
 
     private static let width: CGFloat = 380
+
+    @State private var columnSwipeMonitor: Any?
+    @State private var columnSwipe = SwipeTracker()
+
+    /// The strip across the top the column swipe is read in, covering the header row.
+    private static let headerStripHeight: CGFloat = 56
+    private static let columnSwipeThreshold: CGFloat = 40
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +46,8 @@ struct PopoverRootView: View {
         .frame(minWidth: Self.width,
                maxWidth: isDetached ? .infinity : Self.width,
                maxHeight: isDetached ? .infinity : nil)
+        .onAppear { installColumnSwipe() }
+        .onDisappear { removeColumnSwipe() }
     }
 
     /// Shown only under `--qc-state=...`. Loud on purpose: fixture issues look exactly like real
@@ -91,10 +101,11 @@ struct PopoverRootView: View {
                 }
 
                 Button(action: onToggleDetach) {
-                    // Not the picture-in-picture pair, which borrows a video metaphor for a
-                    // window. Each icon names its own destination: a window to tear off into,
-                    // the menu bar to go back to.
-                    Image(systemName: isDetached ? "menubar.rectangle" : "macwindow")
+                    // A pin, because it says what detaching is for rather than what it makes: the
+                    // panel stays put instead of closing the moment focus moves. Filled while it
+                    // is pinned. Not the picture-in-picture pair this started as, which borrowed a
+                    // video metaphor for a window.
+                    Image(systemName: isDetached ? "pin.fill" : "pin")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.plain)
@@ -116,6 +127,58 @@ struct PopoverRootView: View {
 
     /// The board's columns, and nothing else. They come from the server, so a board the team
     /// rearranges needs no change here.
+    // MARK: - Swiping between columns
+
+    /// A two-finger swipe across the header steps through the board's columns, left for the next
+    /// one and right for the previous, which is the same direction sense as the swipe back inside
+    /// an issue. The ends hold instead of wrapping.
+    ///
+    /// A local scroll monitor for the same reason as the swipe back: a trackpad swipe is a scroll
+    /// event with precise deltas and a phase, and no SwiftUI gesture reports it.
+    private func installColumnSwipe() {
+        guard columnSwipeMonitor == nil else { return }
+        columnSwipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            handleColumnSwipe(event) ? nil : event
+        }
+    }
+
+    private func removeColumnSwipe() {
+        if let columnSwipeMonitor { NSEvent.removeMonitor(columnSwipeMonitor) }
+        columnSwipeMonitor = nil
+    }
+
+    /// Never consumes the event: the list underneath still has to scroll normally, and a swipe
+    /// only ever adds an action once it has finished.
+    private func handleColumnSwipe(_ event: NSEvent) -> Bool {
+        // Only over the list. An issue is open on top of this, and a swipe there means go back.
+        guard store.selectedKey == nil, store.columns.count > 1 else { return false }
+        guard let contentHeight = event.window?.contentView?.bounds.height,
+              event.locationInWindow.y > contentHeight - Self.headerStripHeight else { return false }
+
+        if event.phase.contains(.began) {
+            columnSwipe.began()
+        } else if event.phase.contains(.changed) {
+            columnSwipe.moved(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
+        } else if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            if let direction = columnSwipe.ended(threshold: Self.columnSwipeThreshold) {
+                step(forward: direction == .left)
+            }
+        } else if event.phase.isEmpty, event.momentumPhase.isEmpty {
+            let direction = SwipeTracker.direction(ofUnphasedDeltaX: event.scrollingDeltaX,
+                                                   deltaY: event.scrollingDeltaY,
+                                                   threshold: Self.columnSwipeThreshold)
+            if let direction { step(forward: direction == .left) }
+        }
+        return false
+    }
+
+    private func step(forward: Bool) {
+        guard let next = ColumnPaging.column(after: store.scope,
+                                             in: store.columns,
+                                             forward: forward) else { return }
+        store.scope = next
+    }
+
     private var scopePicker: some View {
         Menu {
             ForEach(store.columns) { column in

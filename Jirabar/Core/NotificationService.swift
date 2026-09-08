@@ -61,7 +61,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         guard overflow > 0 else { return }
         let content = UNMutableNotificationContent()
         content.title = "\(overflow) more issues in \(columnName)"
-        content.body = "Open Ticketbar to see them."
+        content.body = "Open Jirabar to see them."
         content.sound = .default
         center.add(UNNotificationRequest(identifier: "issue-overflow-\(UUID().uuidString)",
                                          content: content,

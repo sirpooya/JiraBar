@@ -7,9 +7,10 @@ import SwiftUI
 /// wrong for reading a long comment thread or typing a reply with the browser open beside it.
 /// Detaching hosts the same view in a floating window instead.
 ///
-/// A plain `NSWindow`, not an `NSPanel`: `WindowActivation` derives the activation policy from the
-/// titled non-panel windows on screen, so a panel would leave the app `.accessory` and text fields
-/// inside it would refuse first responder.
+/// A plain `NSWindow`, not an `NSPanel`, and this is what keeps the app out of the Dock. `.titled`
+/// is what makes a window able to become key, so this window takes the caret while the app stays
+/// `.accessory`. An `NSPanel` declines key status on its own terms, which is what text fields
+/// refusing first responder was really about; see `WindowActivation`.
 @MainActor
 final class DetachedWindow: NSObject, NSWindowDelegate {
     static let shared = DetachedWindow()
@@ -45,7 +46,7 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         hosting.sizingOptions = []
 
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Ticketbar"
+        window.title = "Jirabar"
         // Resizable, because nothing sizes it to its content any more: the height is the user's.
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         // 380 is the floor, not the ceiling: the panel fills this window now, so dragging it

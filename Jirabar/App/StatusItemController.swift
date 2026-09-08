@@ -58,7 +58,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.target = self
         button.action = #selector(statusItemClicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        button.setAccessibilityLabel("Ticketbar")
+        button.setAccessibilityLabel("Jirabar")
     }
 
     /// The one panel, built the same way whether it is hosted in the popover or in the detached
@@ -119,8 +119,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func openDetachedWindow() {
-        // An accessory app cannot take key focus, so the comment field would refuse first
-        // responder without this.
+        // Activate so the comment field gets the caret. The window is a titled NSWindow, which is
+        // what lets it become key while the app stays `.accessory` and out of the Dock.
         WindowActivation.claim()
         DetachedWindow.shared.show(rootView: makeRootView()) { [weak self] in
             guard let self, self.isDetached else { return }
@@ -156,7 +156,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(withTitle: "Settings...", action: #selector(menuSettings), keyEquivalent: ",")
             .target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Ticketbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Jirabar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
@@ -212,15 +212,15 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     private func accessibilityLabel() -> String {
         switch store.state {
-        case .needsToken: return "Ticketbar: no token yet"
-        case .loading: return "Ticketbar: loading"
-        case .empty: return "Ticketbar: no open issues"
-        case .tokenRejected: return "Ticketbar: token expired"
-        case .unreachable: return "Ticketbar: cannot reach the server"
-        case .failed: return "Ticketbar: error"
+        case .needsToken: return "Jirabar: no token yet"
+        case .loading: return "Jirabar: loading"
+        case .empty: return "Jirabar: no open issues"
+        case .tokenRejected: return "Jirabar: token expired"
+        case .unreachable: return "Jirabar: cannot reach the server"
+        case .failed: return "Jirabar: error"
         case .issues:
             let count = store.badgeCount
-            return count == 1 ? "Ticketbar: 1 open issue" : "Ticketbar: \(count) open issues"
+            return count == 1 ? "Jirabar: 1 open issue" : "Jirabar: \(count) open issues"
         }
     }
 }

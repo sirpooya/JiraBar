@@ -4,12 +4,12 @@ import SwiftUI
 /// `AppDelegate`. SwiftUI still needs a scene to exist, so this declares one that presents
 /// nothing: `isInserted` is bound to a constant false, so no second menu bar item appears.
 @main
-struct TicketbarApp: App {
+struct JirabarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var neverInserted = false
 
     var body: some Scene {
-        MenuBarExtra("Ticketbar", isInserted: $neverInserted) {
+        MenuBarExtra("Jirabar", isInserted: $neverInserted) {
             EmptyView()
         }
     }

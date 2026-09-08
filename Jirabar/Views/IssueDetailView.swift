@@ -28,7 +28,7 @@ struct IssueDetailView: View {
     private static let swipeStripHeight: CGFloat = 120
 
     @State private var swipeMonitor: Any?
-    @State private var swipeTravel: CGFloat = 0
+    @State private var swipeBack = SwipeTracker()
     /// Chosen but not yet applied. Nothing reaches the server until Move is pressed.
     @State private var stagedTransition: JiraTransition?
 
@@ -91,6 +91,7 @@ struct IssueDetailView: View {
             stagedTransition = nil
             await store.loadTransitions(for: issue.key)
         }
+        .task(id: issue.key) { await store.loadFieldRows(for: issue.key) }
         .task(id: issue.key) {
             guard showDescription, let html = issue.descriptionHTML else { return }
             await store.loadImages(in: html)
@@ -122,9 +123,12 @@ struct IssueDetailView: View {
             // to the buttons on the right rather than to the title.
             Text(issue.cleanSummary)
                 .font(.system(size: 13, weight: .semibold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                // One line, ending in an ellipsis. Two lines pushed the header taller than the
+                // row it shares with the buttons and left the second line clipped in half.
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .layoutPriority(1)
+                .help(issue.cleanSummary)
 
             if let platform = issue.platform {
                 PlatformPill(platform: platform)
@@ -165,6 +169,22 @@ struct IssueDetailView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            // The fields Jira shows down the side of an issue. Only the ones this issue actually
+            // has: an empty Component/s or no story points is a row that says nothing.
+            ForEach(store.fieldRowsByKey[issue.key] ?? [], id: \.self) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(row.label)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 96, alignment: .leading)
+                    Text(row.value)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if let updated = issue.updatedDate {
                 Text("Updated \(updated.formatted(.relative(presentation: .named)))")
                     .font(.caption2)
@@ -275,35 +295,27 @@ struct IssueDetailView: View {
     private func removeSwipeBack() {
         if let swipeMonitor { NSEvent.removeMonitor(swipeMonitor) }
         swipeMonitor = nil
-        swipeTravel = 0
     }
 
-    /// True when the event was consumed as part of a back swipe.
+    /// Never consumes the event: the thread underneath still has to scroll, and the swipe only
+    /// acts once it has finished. Whether it counts is judged from the whole gesture's travel,
+    /// because the `.began` and `.ended` events carry no deltas at all. See `SwipeTracker`.
     private func handleSwipeBack(_ event: NSEvent) -> Bool {
         guard let contentHeight = event.window?.contentView?.bounds.height,
               event.locationInWindow.y > contentHeight - Self.swipeStripHeight else { return false }
-        // Decisively sideways, so scrolling the thread with a slight sideways drift never counts.
-        guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return false }
 
         if event.phase.contains(.began) {
-            swipeTravel = 0
-            return true
-        }
-        if event.phase.contains(.changed) {
-            swipeTravel += event.scrollingDeltaX
-            return true
-        }
-        if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
-            let travelled = swipeTravel
-            swipeTravel = 0
-            if travelled > Self.swipeBackThreshold { onBack() }
-            return true
-        }
-        // A mouse wheel, or any device that reports no phase at all: one decisive push.
-        if event.phase.isEmpty, event.momentumPhase.isEmpty,
-           event.scrollingDeltaX > Self.swipeBackThreshold {
-            onBack()
-            return true
+            swipeBack.began()
+        } else if event.phase.contains(.changed) {
+            swipeBack.moved(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
+        } else if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            if swipeBack.ended(threshold: Self.swipeBackThreshold) == .right { onBack() }
+        } else if event.phase.isEmpty, event.momentumPhase.isEmpty {
+            if SwipeTracker.direction(ofUnphasedDeltaX: event.scrollingDeltaX,
+                                      deltaY: event.scrollingDeltaY,
+                                      threshold: Self.swipeBackThreshold) == .right {
+                onBack()
+            }
         }
         return false
     }
@@ -360,15 +372,13 @@ struct IssueDetailView: View {
             Menu {
                 Section("Move from \(issue.statusName) to") {
                     ForEach(transitions) { transition in
-                        Button(transition.name) {
+                        Button(label(for: transition)) {
                             Task { await store.apply(transition, to: issue.key) }
                         }
                     }
                 }
             } label: {
-                // A round arrow, not the board grid this used to be: the control sends the issue
-                // onward, and the circle keeps it distinct from the square browser arrow beside it.
-                Image(systemName: "arrow.forward.circle")
+                Image(systemName: "ellipsis.circle")
                     .font(.system(size: 12, weight: .medium))
             }
             .menuStyle(.borderlessButton)
@@ -377,6 +387,21 @@ struct IssueDetailView: View {
             .help("Move to another column")
             .accessibilityLabel("Move this issue to another column")
         }
+    }
+
+    /// A destination reads as the board column it lands in, named exactly as Jira names it.
+    ///
+    /// The column name, not the transition's own name: the dropdown at the top of the panel says
+    /// "Testing" where this workflow's transition says "Test", and two names for one place is one
+    /// too many. The transition's wording is the fallback for a status no column gathers.
+    ///
+    /// Nothing is added to the name. An earlier version put an emoji in front of every entry,
+    /// which meant two glyphs on the columns already named with one, and an invented glyph on
+    /// the columns that are not.
+    private func label(for transition: JiraTransition) -> String {
+        BoardColumn.name(forStatusID: transition.to?.id, in: store.columns)
+            ?? transition.to?.name
+            ?? transition.name
     }
 
     /// Every move the workflow allows right now, Done included. The server decides what is in

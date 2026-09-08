@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // land where the shortcuts expect it.
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Ticketbar",
+        appMenu.addItem(withTitle: "Quit Jirabar",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appItem.submenu = appMenu
@@ -212,7 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings
 
     private func showSettings() {
-        // An accessory app cannot take key focus, so the token field would refuse first responder.
+        // Activate so the token field gets the caret. This does not add a Dock tile: the app
+        // stays `.accessory` and only comes forward.
         WindowActivation.claim()
         SettingsWindow.shared.show(store: store,
                                    notifications: notifications,

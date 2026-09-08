@@ -28,6 +28,8 @@ section when a release is cut.
 - A placeholder in the avatar slot for an unassigned issue, and initials for anyone who has never uploaded an avatar
 - The comment box lays itself out right to left when the draft starts in Persian, and back again when it starts in English
 - A two-finger swipe right across an issue's header goes back to the column list
+- Swipe across the header with two fingers to move between board columns
+- An app icon, built from an Icon Composer bundle
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -40,6 +42,10 @@ section when a release is cut.
 - The add-a-reaction control is a neutral outline icon, not a smiling face that looked like a reaction you had already added
 - The detach control shows a window icon, and a menu bar icon to put it back, instead of the picture-in-picture pair
 - The move control shows a circled forward arrow instead of the board grid glyph
+- The move control is an ellipsis, and each destination in its menu is named after the board column it lands in, with a colour emoji to tell them apart
+- The menu bar icon is now the diamond mark, from a bundled PNG cropped to its own artwork. It still tints to the bar in monochrome mode and still carries the urgency color when colors are on.
+- The detach control is a pin, filled while the panel is pinned open
+- The app is now called Jirabar. Your saved token and every setting carry over, because the rename left the underlying storage identifiers alone
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -60,4 +66,6 @@ section when a release is cut.
 - The add-a-reaction chip opens the emoji picker beside the comment you clicked, instead of placing it below the whole thread where it could not be seen
 - Adding or removing an emoji reaction tries the shapes this Jira's internal API accepts, and says so plainly when the reaction does not stick
 - Cmd+V, Cmd+C, Cmd+X, Cmd+A and undo work in the comment box and the token field, for plain text as well as pasted images
+- Two-finger swipes now register: the gesture is judged on its whole travel, so swiping between columns and swiping back both work
+- The move menu no longer shows two emoji per row on a board whose columns are already named with one
 

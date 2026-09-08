@@ -1,4 +1,4 @@
-# CLAUDE.md: Ticketbar (macOS menu-bar client for Jira Server/DC)
+# CLAUDE.md: Jirabar (macOS menu-bar client for Jira Server/DC)
 
 ## Goal
 Shows a column of the DDS Jira board in the menu bar, notifies me when a new issue lands in it,
@@ -12,20 +12,35 @@ because nothing on this board is assigned to them and the entry was dead weight.
 Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
 
 ## Naming (DECIDED, do not re-litigate)
-- Display name is **Ticketbar**. The word "Jira" never appears in the shipped app name, the icon,
-  or the About window. Atlassian's trademark policy covers the shipped app name. The repo name,
-  this file, the README, and a description like "a menu bar client for Jira Server/DC" are fine.
+- 2026-09-09 Display name is **Jirabar**, renamed from Ticketbar at the user's direction. The
+  earlier rule here was the opposite: the name was Ticketbar precisely so that "Jira" appeared
+  nowhere in the shipped app name, because Atlassian's trademark policy does not permit it. Both
+  halves of that rule are now reversed, the name and the icon, and this is recorded rather than
+  quietly overwritten so nobody re-derives the old reasoning and "fixes" it back.
+- **This is an internal tool and the naming is only safe while it stays internal.** Before any
+  distribution outside the company, both the name and the icon have to change. Neither is
+  defensible: the name contains the trademark and the icon is Atlassian's own mark.
+- 2026-09-09 The menu bar icon is that mark, from the `logo.png` the user supplied, bundled as
+  `Jirabar/Resources/MenuBarIcon.png` and cropped to its ink at load. The app icon is
+  `Jirabar/Resources/AppIcon.icon`, an Icon Composer bundle, which needs Xcode 26 to compile.
 - GitHub repo: `jira-ticketbar`. The local folder is `osx-jira-ticketbar`, matching the house
-  `osx-*` convention and the existing Claude session path. Those are allowed to differ.
-- Bundle id `in.pooya.ticketbar`, Debug `in.pooya.ticketbar.debug`. `PRODUCT_NAME` is `Ticketbar`,
-  so the artifact is `Ticketbar.app`.
+  `osx-*` convention and the existing Claude session path. Neither was renamed with the app,
+  because the folder path is this project's Claude session key; use the `rename-project` skill if
+  you ever want them to match.
+- Bundle id `in.pooya.ticketbar`, Debug `in.pooya.ticketbar.debug`. `PRODUCT_NAME` is `Jirabar`,
+  so the artifact is `Jirabar.app`.
 
 ## Status
 2026-09-08 (latest): the detail view is one scroll area, rows carry the key and the assignee's
-avatar, the composer grows to five lines and flips to right to left for Persian, `Cmd+V` works at
-all now, and two separate crash loops are fixed (see the `sizingOptions` and defaults observer
-decisions). 84 tests green. QC note: Accessibility is not granted to the VS Code host on this Mac,
-so `mac-qc` cannot drive or photograph the UI; grant it before trusting any screenshot claim.
+avatar, comment images are inlined, the composer grows to five lines and flips to right to left for
+Persian, the editing shortcuts are delivered by a key monitor, the reaction picker opens against
+its chip, a swipe right goes back, and two separate crash loops are fixed (see the `sizingOptions`
+and defaults observer decisions). 94 tests green.
+Two things are built but **unproven against the live instance**: pasting an image with `Cmd+V`, and
+emoji reactions, whose endpoint shape 404s and is now attempted four ways. Both have DEBUG logging
+on stderr; one click each settles them.
+QC note: Accessibility is not granted to the VS Code host on this Mac, so `mac-qc` cannot drive or
+photograph the UI. Any claim here about layout or pixels is reasoning, not measurement.
 
 2026-09-08 (late): comments, comment authoring, emoji reactions and the detached window landed.
 The detail view is now title, optional metadata, optional description, then the comment thread
@@ -100,7 +115,7 @@ first and match by name, never hardcode a transition id: ids differ per workflow
 - Storage: UserDefaults for configuration, every key in one `Keys` enum, defaults registered at
   launch. Keychain (`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlocked`) for the PAT.
   Never plist or UserDefaults for the token.
-- Format: XcodeGen `project.yml` is the source of truth; `Ticketbar.xcodeproj` is generated and
+- Format: XcodeGen `project.yml` is the source of truth; `Jirabar.xcodeproj` is generated and
   gitignored.
 
 > Do NOT add a Swift package unless a task truly needs it. Ask first. There are no approved
@@ -112,9 +127,9 @@ first and match by name, never hardcode a transition id: ids differ per workflow
 project.yml            XcodeGen spec, the source of truth
 CLAUDE.md              this file
 PLAN.md                phase order, check the boxes as they land
-Ticketbar/
+Jirabar/
   App/                 AppKit. No Jira knowledge here.
-    TicketbarApp        @main, one MenuBarExtra that presents nothing so SwiftUI has a scene
+    JirabarApp        @main, one MenuBarExtra that presents nothing so SwiftUI has a scene
     AppDelegate         defaults, sleep/wake wiring, lifecycle returns
     StatusItemController  status item, popover, detach, icon updates
     StatusItemIcon      the two rendering modes and the urgency colours
@@ -142,13 +157,28 @@ Ticketbar/
     QCHooks             forced states and fixtures. DEBUG only.
   Resources/           Assets.xcassets
   Info.plist
-  Ticketbar.entitlements
-TicketbarTests/        CoreTests, StorageTests. The app is the TEST_HOST.
+  Jirabar.entitlements
+JirabarTests/        CoreTests, StorageTests. The app is the TEST_HOST.
 _samples/              the visual spec
 ```
-Build: `xcodegen generate && xcodebuild -project Ticketbar.xcodeproj -scheme Ticketbar build`.
-Run: `open build/Ticketbar.app`. Quit the running app before repackaging: replacing the bundle
-under a running process invalidates its code signature.
+Build: `xcodegen generate && xcodebuild -project Jirabar.xcodeproj -scheme Jirabar build`.
+Run: **install to `/Applications` and launch from there, never from DerivedData.** `build/` does
+not exist; `xcodebuild` writes to `~/Library/Developer/Xcode/DerivedData/Jirabar-<hash>/Build/
+Products/Debug/`, and the hash changes if the project is ever renamed, so locate it rather than
+hardcoding it:
+```bash
+APP=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Jirabar.app" \
+        -path "*/Build/Products/Debug/*" | head -1)
+pkill -x Jirabar; sleep 1
+rm -rf /Applications/Jirabar.app && cp -R "$APP" /Applications/Jirabar.app
+/Applications/Jirabar.app/Contents/MacOS/Jirabar 2>/tmp/jirabar.err &
+```
+`/Applications/Jirabar.app` is the copy the user actually clicks, so verifying a DerivedData build
+verifies a bundle they are not running. Launch the binary directly rather than with `open` so
+stderr can be captured and read back. Quit the running app before replacing the bundle: overwriting
+it under a live process invalidates its code signature. Copying to `/Applications` does not
+re-prompt for the token, because signing uses a real certificate and the designated requirement
+carries no path.
 
 ## Decisions (DECIDED, do not re-litigate unless you spot a real problem)
 - 2026-09-02 Menu bar: `NSStatusItem` plus `NSPopover`, not `MenuBarExtra`. The popover must sit
@@ -160,6 +190,16 @@ under a running process invalidates its code signature.
 - 2026-09-02 The bundle id `in.pooya.ticketbar`, the Keychain service `in.pooya.ticketbar.pat` and
   the defaults prefix `in.pooya.ticketbar.` are storage addresses, not labels. Renaming any of them
   strands the user's token and settings.
+- 2026-09-09 **The Ticketbar to Jirabar rename deliberately stopped at those addresses.** The rule
+  is mechanical: capitalised `Ticketbar` was a product name and became `Jirabar`; lowercase
+  `ticketbar` was an address and did not move. No line in the tree mixed the two, so the split was
+  exact. What stayed: the three bundle ids, the 17 defaults keys in `Keys.swift`, the Keychain
+  service (which `TokenStore` derives from the bundle id, so it follows automatically), the status
+  item's `autosaveName` of `ticketbar.status.v1`, the detached window's frame autosave name, and
+  the `ticketbar` URL scheme that notification clicks come back through. Renaming the autosave name
+  is its own trap: `NSStatusItem` persists visibility per slot, and a fresh name means a fresh slot
+  (see the autosaveName decision). Two harmless leftovers are cosmetic only, the pasted-image
+  attachment filename `ticketbar-<timestamp>.png` and a multipart boundary string.
 - 2026-09-02 Failure states are three separate states, never one empty list. A 401 or 403 says the
   token expired and offers the token page. An unreachable host says you are probably off the VPN
   and offers a retry. Only a genuinely empty result set shows the empty state. Collapsing any of
@@ -214,7 +254,7 @@ under a running process invalidates its code signature.
   the titled non-panel windows on screen, so a panel leaves the app `.accessory` and the comment
   field refuses first responder. While detached the status item raises the window instead of
   opening a second copy of the same panel underneath it.
-- 2026-09-08 **Ticketbar never deletes a Jira comment.** Add, edit and react only. There is no
+- 2026-09-08 **Jirabar never deletes a Jira comment.** Add, edit and react only. There is no
   `deleteComment` on the client, no delete link in the rendered thread, and a test asserts the
   composed HTML contains no delete affordance. A delete control in a popover that opens under the
   cursor is one stray click from destroying somebody's comment, and Jira does not undo it. Taking
@@ -259,12 +299,19 @@ under a running process invalidates its code signature.
 - 2026-09-08 The panel is 380 points wide in the popover, which sizes to its content, and fills
   the window in both directions when detached, with 380 as the floor. Pinned to 380 it sat in a
   window dragged out to 572 with a wide empty margin beside it.
-- 2026-09-08 **An `LSUIElement` app still needs a main menu.** AppKit routes the standard editing
-  shortcuts through it, so with no main menu `Cmd+V` reached nothing: pasting into the composer or
-  the token field did nothing, and `PastingTextView.paste(_:)`, where a pasted screenshot is
-  intercepted, was never called. A text view builds its own contextual menu, so right-click Paste
-  worked, which made this look like an image-only bug. The menu is never seen; it exists so the
-  shortcuts work.
+- 2026-09-08 **The standard editing shortcuts are delivered by a local key monitor, not by a
+  menu.** `Cmd+V` reached nothing at all: pasting into the composer or the token field did
+  nothing, for plain text as much as for an image, and `PastingTextView.paste(_:)`, where a pasted
+  screenshot is intercepted, was never called. A text view builds its own contextual menu, so
+  right-click Paste worked, which disguised this as an image-only bug.
+  Two fixes were tried and neither was enough on its own. AppKit dispatches these shortcuts
+  through `NSApp.mainMenu`, and installing an Edit menu in the delegate does not hold, because
+  this app's only scene is a `MenuBarExtra` and SwiftUI owns that menu and replaces it. Overriding
+  `performKeyEquivalent` on the text view was never reached either. What works is
+  `AppDelegate.installEditingShortcuts`: a local `.keyDown` monitor, which sees the key before the
+  window dispatches it and so depends on neither the menu nor the responder chain. It acts only
+  when the focused responder can perform the action, which is what also fixes the token field.
+  The main menu is still installed, and is still never seen.
 - 2026-09-08 Right-to-left text is decided by the text, per element, never globally. The composer
   sets its base writing direction from the draft's **first strong character**
   (`TextDirection.firstStrong`), and each comment's byline and body carry `dir="auto"`. Digits and
@@ -276,13 +323,73 @@ under a running process invalidates its code signature.
   (`NonScrollingWebView`). A single height measured at load came in short, and WKWebView answered
   by scrolling internally: the thread slid under the composer while the detail view's own scroller
   sat untouched. The detail view has exactly one scroll area.
-- 2026-09-08 The detach control is `macwindow` and `menubar.rectangle`, not the picture in picture
-  pair, which borrowed a video metaphor for a window. Verify any SF Symbol name against the system
-  list before shipping it: a misspelled name renders as nothing and the build still succeeds.
+- 2026-09-09 The detach control is `pin` and, while detached, `pin.fill`. It says what detaching
+  is for rather than what it makes: the panel stays put instead of closing the moment focus moves.
+  It went picture in picture, then `macwindow`, then this. Verify any SF Symbol name against the
+  system list before shipping it: a misspelled name renders as nothing and the build still
+  succeeds.
 - 2026-09-08 **Comment times are not wrong when they disagree with Jira's web UI.** Jira renders
   them in the Jira profile's timezone, this app uses the Mac's clock, and both describe the same
   instant. `08/Sep/26 7:37 AM` in Jira is 11:07 in Tehran, so "2 minutes ago" at 11:09 is correct.
   The offset in `2026-09-02T11:04:33.000+0330` is parsed, not dropped.
+
+- 2026-09-08 A paste carrying both image bytes and text is an **image** paste unless the text is
+  real prose (`PasteRouting`). The rule used to be the other way round, and any text at all beat
+  the image, so a screenshot copied out of a browser or a design tool pasted its file name
+  (`pastedImage_9_8_2026__11_52_41_224.png`) as a line of text and dropped the picture.
+- 2026-09-08 Images inside rendered HTML are **fetched with the token and inlined as `data:` URIs**
+  (`HTMLImages`, `JiraClient.imageData(at:)`). Jira renders an attachment as
+  `<img src="/secure/attachment/...">`, a path on the Jira host behind the same bearer token as
+  everything else, and a web view given no base URL and no token showed a broken icon with the
+  file name beside it. Inlining also means the web view still makes no requests of its own, so the
+  privacy claim below stays exactly true. The same host guard as the avatar applies, and an image
+  over 8 MB is left alone rather than putting a document of many megabytes into a web view.
+- 2026-09-08 The detached window's minimum is enforced in **`windowWillResize(_:to:)`**, and a
+  restored frame is clamped up to it. `contentMinSize` did not hold: with `sizingOptions` empty the
+  content imposes no constraints of its own and the drag went straight past the minimum, clipping
+  the panel, and restoring an autosaved frame does not consult the minimum at all.
+- 2026-09-08 **The reaction endpoint's shape is not known for this instance.** The single guessed
+  shape, `PUT /rest/internal/2/issue/{key}/comment/{id}/reaction/{emojiId}`, returns 404 on
+  works.digikala.com. `JiraClient.reactionCalls` now tries four shapes in order and stops at the
+  first accepted; only a 404 advances to the next, so an expired token or an unreachable host is
+  still the real answer. A 404 records nothing, so the misses cannot leave anything on somebody's
+  board. The toggle also reads the reactions back and says so when the reaction did not stick,
+  because Jira's internal API can answer 200 and record nothing. Still unproven end to end.
+  Note `JiraReaction.emojiId(for:)` uses only the first unicode scalar, so "❤️" becomes `2764`
+  rather than `2764-fe0f`: if one emoji works and that one does not, this is why.
+- 2026-09-08 The reaction picker opens **against the chip that asked for it**. The page's own click
+  handler cancels the link and posts the chip's `getBoundingClientRect()` with the comment id over
+  a second script channel, and the panel floats over the thread at that point, clamped inside it.
+  It used to be appended after the whole thread, which on anything but a short one put it far below
+  the fold: clicking the chip looked like it did nothing. The link stays in the HTML as the
+  fallback for when that script does not run.
+- 2026-09-08 A **two-finger swipe right across the header** goes back to the column list. Read from
+  a local `.scrollWheel` monitor, because `DragGesture` is a click and drag and a trackpad swipe
+  arrives as a scroll event with precise deltas and a phase that no SwiftUI gesture reports. Two
+  guards: only in the top strip of the panel, and only when the movement is decisively sideways, so
+  scrolling the thread with a sideways drift never triggers it.
+- 2026-09-08 The move control is an **ellipsis**, and each destination in its menu is named after
+  the **board column** that gathers the destination status (`ColumnGlyph`). The column name because
+  the dropdown says "Testing" where this workflow's transition says "Test", and two names for one
+  place is one too many. A glyph is added **only when the name has none**: board 95's columns are
+  already named with a coloured circle, "🟠 Working on it", "🟣 QC Ready", "🟢 Done", and prefixing
+  another put two emoji on every row. Where one is added it is an emoji rather than a tinted SF
+  Symbol, because a macOS menu strips the tint and the colour would not survive.
+- 2026-09-08 DEBUG logging writes to `FileHandle.standardError`, never `print`. `print` to a pipe
+  is block buffered, and the first attempt at logging the undocumented reaction calls produced an
+  empty file because the buffer never flushed.
+
+- 2026-09-08 A **two-finger swipe across the list header steps through the board's columns**, left
+  for the next and right for the previous, the same direction sense as the swipe back inside an
+  issue (`ColumnPaging`). The ends hold rather than wrapping: a board is a line from backlog to
+  done, and going from Done to Sprint Backlog on one more swipe reads as a glitch. Its monitor is
+  guarded on no issue being open, so a swipe over an issue still means go back.
+
+- 2026-09-09 **A trackpad swipe is judged on the whole gesture's travel, never event by event**
+  (`SwipeTracker`). The `.began` and `.ended` scroll events carry zero deltas, so testing each
+  event for "more sideways than vertical" rejects the `.ended` event, `0 > 0` being false, and the
+  gesture never completes: both swipes were dead on arrival for exactly this reason. Neither
+  monitor consumes its events either, so the list and the comment thread still scroll normally.
 
 ## Privacy (local-first)
 No telemetry, no analytics, no account. Network calls, exhaustively: `works.digikala.com` (or
@@ -298,7 +405,7 @@ user stores leaves this Mac.
   server, which is the only way to photograph the failure states on demand:
 
   ```
-  Ticketbar.app/Contents/MacOS/Ticketbar --qc-state=<value>
+  Jirabar.app/Contents/MacOS/Jirabar --qc-state=<value>
   ```
 
   | Value | Shows |
@@ -338,7 +445,7 @@ skill.
 - Read this file and `PLAN.md` first. Follow the phase order.
 - Never transition, comment on, or otherwise write to a real Jira issue during development without
   explicit permission. Reads are free; writes touch other people's boards.
-- Put testable logic in `Ticketbar/Core/`, free of SwiftUI and AppKit imports.
+- Put testable logic in `Jirabar/Core/`, free of SwiftUI and AppKit imports.
 - Commit in small, working increments. Explain any deviation from this spec.
 - Ask before adding any external dependency.
 - No em dashes: prose, UI strings, code comments, commit messages.

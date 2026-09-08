@@ -40,7 +40,7 @@ struct NeedsTokenView: View {
         StatePlaceholder(symbol: "key",
                          tint: .accentColor,
                          title: "Connect your Jira account",
-                         message: "Paste a Personal Access Token in Settings and Ticketbar will show the issues assigned to you.") {
+                         message: "Paste a Personal Access Token in Settings and Jirabar will show the issues assigned to you.") {
             Button("Open Settings", action: onOpenSettings)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

@@ -50,7 +50,7 @@ struct SettingsView: View {
 
     private var accountSection: some View {
         SettingsSection("Jira Account",
-                        footnote: "Personal Access Tokens expire, often after 90 days. When yours does, Ticketbar says so instead of showing an empty list.") {
+                        footnote: "Personal Access Tokens expire, often after 90 days. When yours does, Jirabar says so instead of showing an empty list.") {
             SettingsFieldRow(title: "Server",
                              placeholder: Keys.defaultBaseURL,
                              text: $baseURLText,
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 }
             } else {
                 SettingsRow("Personal Access Token",
-                            subtitle: "Held in your Keychain for \(parsedBaseURL?.host ?? "this server"). Ticketbar never stores it anywhere else.") {
+                            subtitle: "Held in your Keychain for \(parsedBaseURL?.host ?? "this server"). Jirabar never stores it anywhere else.") {
                     Label("Saved", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.green)
@@ -221,7 +221,7 @@ struct SettingsView: View {
 
     private var issueDetailSection: some View {
         SettingsSection("Issue Detail",
-                        footnote: "Turning a section off also stops Ticketbar fetching it, so a long description or a busy comment thread costs nothing when you are not reading it.") {
+                        footnote: "Turning a section off also stops Jirabar fetching it, so a long description or a busy comment thread costs nothing when you are not reading it.") {
             SettingsRow("Show status, type and priority",
                         subtitle: "The chips under the title, and the line saying when the issue was last updated.") {
                 SettingsSwitch(isOn: $showMetadata)
@@ -239,7 +239,7 @@ struct SettingsView: View {
 
     private var refreshSection: some View {
         SettingsSection("Refresh",
-                        footnote: "Jira Server cannot push to a Mac, so Ticketbar polls. Polling stops while this Mac sleeps and while the server is unreachable.") {
+                        footnote: "Jira Server cannot push to a Mac, so Jirabar polls. Polling stops while this Mac sleeps and while the server is unreachable.") {
             SettingsRow("Check every") {
                 Picker("", selection: $pollMinutes) {
                     ForEach(Array(Keys.pollMinutesRange), id: \.self) { minutes in

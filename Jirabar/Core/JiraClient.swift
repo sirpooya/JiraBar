@@ -77,6 +77,19 @@ struct JiraClient {
         return try await send(request)
     }
 
+    /// The fields Jira shows down the side of an issue, as label and value pairs.
+    ///
+    /// Asks for `*all` with `expand=names` rather than a field list, because Story Points and Tech
+    /// Area are custom fields whose ids differ per instance: the server is the only thing that
+    /// knows which id is called what. One request, made when an issue is opened, never folded into
+    /// the list search, which would pull every field for fifty issues nobody has opened.
+    func fieldRows(for key: String) async throws -> [IssueFieldRow] {
+        let response = try await get("/rest/api/2/issue/\(key)",
+                                     query: ["fields": "*all", "expand": "names"],
+                                     as: IssueFieldsResponse.self)
+        return IssueFieldRows.rows(fields: response.fields ?? [:], names: response.names ?? [:])
+    }
+
     // MARK: - Agile board
 
     /// The boards belonging to a project. Server/DC serves the Agile API from its own path.
@@ -147,7 +160,7 @@ struct JiraClient {
                                              commentID: commentID))
     }
 
-    /// Removes *your own* reaction. This is not the comment-delete that Ticketbar refuses to have:
+    /// Removes *your own* reaction. This is not the comment-delete that Jirabar refuses to have:
     /// it takes back something you added, and cannot touch anyone else's comment or reaction.
     func removeReaction(_ emojiId: String, issueKey: String, commentID: String) async throws {
         try await attempt(Self.reactionCalls(adding: false,
@@ -209,7 +222,7 @@ struct JiraClient {
         throw lastError
     }
 
-    // There is deliberately NO deleteComment here, and there must never be one. Ticketbar can add
+    // There is deliberately NO deleteComment here, and there must never be one. Jirabar can add
     // and edit comments; deleting is done in the browser, on purpose, where it takes more than one
     // click in a popover that opens under the cursor.
 

@@ -84,3 +84,35 @@ extension BoardColumn {
         return collapsed.isEmpty ? "column" : collapsed.joined(separator: "-")
     }
 }
+
+/// Stepping from one board column to the next, for the swipe across the list header.
+enum ColumnPaging {
+    /// The column a swipe lands on, or nil when there is nowhere to go.
+    ///
+    /// The ends hold rather than wrapping around: a board is a line of columns from backlog to
+    /// done, and jumping from Done back to Sprint Backlog on one more swipe reads as a glitch
+    /// rather than as paging.
+    static func column(after current: BoardColumn?,
+                       in columns: [BoardColumn],
+                       forward: Bool) -> BoardColumn? {
+        guard !columns.isEmpty else { return nil }
+        guard let current, let index = columns.firstIndex(of: current) else { return columns.first }
+
+        let next = forward ? index + 1 : index - 1
+        guard columns.indices.contains(next) else { return nil }
+        return columns[next]
+    }
+}
+
+extension BoardColumn {
+    /// The name of the column that gathers a status.
+    ///
+    /// Used by the move menu, so a destination reads as the column the dropdown calls it: this
+    /// workflow's transition says "Test" where the column is "Testing", and two names for one
+    /// place is one too many. The name is passed through exactly as the board has it, emoji and
+    /// all, and nothing is ever added to it.
+    static func name(forStatusID id: String?, in columns: [BoardColumn]) -> String? {
+        guard let id else { return nil }
+        return columns.first { $0.statusIDs.contains(id) }?.name
+    }
+}

@@ -332,6 +332,24 @@ final class IssueStore {
         await loadImages(in: (commentsByKey[key] ?? []).map(\.html).joined())
     }
 
+    // MARK: - Issue fields
+
+    /// The side panel fields (components, labels, story points, affected versions), per issue.
+    private(set) var fieldRowsByKey: [String: [IssueFieldRow]] = [:]
+    private var loadingFieldRows: Set<String> = []
+
+    /// Loaded when an issue is opened, never for the list. Silent on failure: the issue still
+    /// reads without its side panel.
+    func loadFieldRows(for key: String) async {
+        guard forcedState == nil, let client else { return }
+        guard fieldRowsByKey[key] == nil, !loadingFieldRows.contains(key) else { return }
+        loadingFieldRows.insert(key)
+        defer { loadingFieldRows.remove(key) }
+        if let rows = try? await client.fieldRows(for: key) {
+            fieldRowsByKey[key] = rows
+        }
+    }
+
     // MARK: - Images inside rendered HTML
 
     /// Fetches every image a block of server-rendered HTML points at, through the client, so the
@@ -389,7 +407,7 @@ final class IssueStore {
     }
 
     /// Adds your reaction, or takes it back if it is already yours. Taking back your own reaction
-    /// is not the comment-delete Ticketbar refuses to have: it cannot touch anyone else's content.
+    /// is not the comment-delete Jirabar refuses to have: it cannot touch anyone else's content.
     func toggleReaction(_ emojiId: String, commentID: String, on key: String) async {
         guard let client else { return }
         let existing = reactionsByComment[commentID]?.first { $0.emojiId == emojiId }

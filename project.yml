@@ -1,6 +1,6 @@
-# XcodeGen spec. This file is the source of truth; Ticketbar.xcodeproj is generated with
+# XcodeGen spec. This file is the source of truth; Jirabar.xcodeproj is generated with
 # `xcodegen generate` and gitignored.
-name: Ticketbar
+name: Jirabar
 options:
   bundleIdPrefix: in.pooya
   deploymentTarget:
@@ -13,24 +13,24 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 schemes:
-  Ticketbar:
+  Jirabar:
     build:
       targets:
-        Ticketbar: all
-        TicketbarTests: [test]
+        Jirabar: all
+        JirabarTests: [test]
     test:
       targets:
-        - TicketbarTests
+        - JirabarTests
 
 targets:
-  Ticketbar:
+  Jirabar:
     type: application
     platform: macOS
     sources:
-      - path: Ticketbar
+      - path: Jirabar
     settings:
       base:
-        PRODUCT_NAME: Ticketbar
+        PRODUCT_NAME: Jirabar
         PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
@@ -71,30 +71,30 @@ targets:
           # Keychain item, so testing does not clobber the real token.
           PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar.debug
     info:
-      path: Ticketbar/Info.plist
+      path: Jirabar/Info.plist
       properties:
-        CFBundleDisplayName: Ticketbar
+        CFBundleDisplayName: Jirabar
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         # Menu-bar only: no Dock tile. The app runs .accessory and flips to .regular only while a
         # real titled window is open.
         LSUIElement: true
         NSHumanReadableCopyright: ""
     entitlements:
-      path: Ticketbar/Ticketbar.entitlements
+      path: Jirabar/Jirabar.entitlements
       properties:
         # Off. The app talks to an internal host over the VPN and writes a Keychain item; the
         # sandbox buys nothing here and complicates the Keychain ACL across rebuilds.
         com.apple.security.app-sandbox: false
 
-  TicketbarTests:
+  JirabarTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: TicketbarTests
+      - path: JirabarTests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: in.pooya.ticketbar.tests
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ticketbar.app/Contents/MacOS/Ticketbar"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Jirabar.app/Contents/MacOS/Jirabar"
         BUNDLE_LOADER: "$(TEST_HOST)"
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Manual
@@ -104,4 +104,4 @@ targets:
         # different team fails at load with a "different Team IDs" dlopen error.
         DEVELOPMENT_TEAM: 37MA269X54
     dependencies:
-      - target: Ticketbar
+      - target: Jirabar

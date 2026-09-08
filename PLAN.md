@@ -1,4 +1,4 @@
-# PLAN.md: Ticketbar
+# PLAN.md: Jirabar
 
 The phase order. Nothing in a later milestone starts before the milestone above it is observable
 on screen or on the server. Check the boxes as they land; the "Proof" column is what counts as
@@ -15,11 +15,11 @@ Model: Sonnet 5, no extended thinking. Template filling and one `xcodegen` run.
 
 - [x] `project.yml`, `.gitignore`, `CLAUDE.md`, `PLAN.md`
 - [x] `git init`, first commit
-- [x] Source tree: `Ticketbar/{App,Views,Core,Resources}`, `TicketbarTests/`
-- [x] `xcodegen generate` then `xcodebuild -scheme Ticketbar build` succeeds
+- [x] Source tree: `Jirabar/{App,Views,Core,Resources}`, `JirabarTests/`
+- [x] `xcodegen generate` then `xcodebuild -scheme Jirabar build` succeeds
 - [x] App launches as `LSUIElement` with a placeholder status item and no Dock tile
 
-Proof: `open build/Ticketbar.app`, an icon in the menu bar, nothing in the Dock.
+Proof: `open build/Jirabar.app`, an icon in the menu bar, nothing in the Dock.
 
 ---
 
@@ -50,7 +50,7 @@ boilerplate. The dual-mode icon is what `menubar-icon-theming` exists for.
 
 - [x] `NSStatusItem` plus `NSPopover`, `behavior = .transient`, `animates = false`,
       `sizingOptions = [.preferredContentSize]`
-- [x] `MenuBarExtra("Ticketbar", isInserted: $never) { EmptyView() }` so SwiftUI has a scene
+- [x] `MenuBarExtra("Jirabar", isInserted: $never) { EmptyView() }` so SwiftUI has a scene
 - [ ] `applicationShouldTerminateAfterLastWindowClosed`, `applicationShouldOpenUntitledFile`,
       `applicationShouldHandleReopen` all false; close the popover on `didResignActiveNotification`
 - [x] Icon: filled shape plus knockout glyph, probed with `button.effectiveAppearance`, never

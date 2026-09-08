@@ -42,7 +42,7 @@ struct TokenStore {
             throw KeychainStore.StoreError.notFound
         }
         // The label is what Keychain Access shows. It names the item; it never holds the secret.
-        try keychain.set(data, for: Self.account(for: baseURL), label: "Ticketbar token")
+        try keychain.set(data, for: Self.account(for: baseURL), label: "Jirabar token")
     }
 
     func delete(for baseURL: URL?) throws {

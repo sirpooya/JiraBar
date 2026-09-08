@@ -140,6 +140,12 @@ struct CustomFieldValue: Decodable, Hashable {
     }
 }
 
+/// One issue with every field, plus the map from field id to display name.
+struct IssueFieldsResponse: Decodable {
+    let fields: [String: JSONValue]?
+    let names: [String: String]?
+}
+
 // MARK: - Comments
 
 struct JiraCommentsResponse: Decodable {

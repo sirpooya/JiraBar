@@ -6,7 +6,7 @@ import Foundation
 /// render as an empty list means putting all four states side by side in a screenshot, and two of
 /// them are awkward to produce on demand against a live server.
 ///
-///     Ticketbar.app/Contents/MacOS/Ticketbar --qc-state=token-rejected
+///     Jirabar.app/Contents/MacOS/Jirabar --qc-state=token-rejected
 ///
 /// Values: `sample`, `empty`, `loading`, `needs-token`, `token-rejected`, `unreachable`, `failed`.
 /// DEBUG only. A release build ignores the flag entirely.

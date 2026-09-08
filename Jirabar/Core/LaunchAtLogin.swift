@@ -24,7 +24,7 @@ enum LaunchAtLogin {
             if enabled {
                 try SMAppService.mainApp.register()
                 if needsApproval {
-                    return "Allow Ticketbar in System Settings, Login Items, to finish enabling this."
+                    return "Allow Jirabar in System Settings, Login Items, to finish enabling this."
                 }
             } else {
                 try SMAppService.mainApp.unregister()

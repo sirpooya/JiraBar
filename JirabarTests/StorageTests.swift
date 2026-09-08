@@ -1,5 +1,5 @@
 import XCTest
-@testable import Ticketbar
+@testable import Jirabar
 
 // MARK: - Seen issues
 
