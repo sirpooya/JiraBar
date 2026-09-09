@@ -311,11 +311,16 @@ final class IssueStore {
 
     func loadTransitions(for key: String) async {
         guard forcedState == nil, let client else { return }
-        guard transitionsByKey[key] == nil else { return }
+        // Deduplicated: hovering a row asks for these, and a pointer crossing a list asks often.
+        guard transitionsByKey[key] == nil, !loadingTransitions.contains(key) else { return }
+        loadingTransitions.insert(key)
+        defer { loadingTransitions.remove(key) }
         if let list = try? await client.transitions(for: key) {
             transitionsByKey[key] = list
         }
     }
+
+    private var loadingTransitions: Set<String> = []
 
     /// Comments are a separate request, made only when a detail view opens. Folding them into
     /// the list search would make every poll fetch discussion for fifty issues nobody has opened.

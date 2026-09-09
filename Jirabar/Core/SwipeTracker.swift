@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 enum SwipeDirection {
     case left
@@ -27,6 +28,13 @@ struct SwipeTracker {
         travelY += deltaY
     }
 
+    /// How far sideways the gesture has come so far, for showing it as it happens.
+    var sidewaysTravel: CGFloat { travelX }
+
+    /// True while the gesture is more sideways than vertical, so the panel only follows a swipe
+    /// that is actually going sideways and stays put while the list is being scrolled.
+    var isSideways: Bool { abs(travelX) > abs(travelY) }
+
     /// The direction this swipe counts as, or nil when it was too small or mostly vertical.
     /// Resets either way, so the next swipe starts clean even if this one did nothing.
     mutating func ended(threshold: CGFloat) -> SwipeDirection? {
@@ -37,6 +45,17 @@ struct SwipeTracker {
 
         guard abs(x) > threshold, abs(x) > abs(y) else { return nil }
         return x > 0 ? .right : .left
+    }
+
+    /// How far the panel moves for a given amount of finger travel.
+    ///
+    /// It follows the swipe but never goes far, easing towards `limit` and never past it, so the
+    /// panel acknowledges the gesture without opening a gap where the next column's issues would
+    /// be if they were loaded. Pulling against an end of the board gets a smaller limit, which is
+    /// how a boundary says no.
+    static func rubberBand(_ travel: CGFloat, limit: CGFloat) -> CGFloat {
+        guard limit > 0 else { return 0 }
+        return limit * tanh(travel / limit)
     }
 
     /// For a mouse wheel or any device that reports no phases at all: one decisive push, judged

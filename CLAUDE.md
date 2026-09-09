@@ -481,6 +481,32 @@ carries no path.
   The platform tag lives with the issue's other chips in the detail view, not in the header beside
   the title, where it read as one of the buttons. There is no "Updated ... ago" line.
 
+- 2026-09-09 The column swipe is **interactive**: the list follows the fingers as they move
+  (`SwipeTracker.rubberBand`), springs back when the gesture was too small, and gives way less at
+  an end of the board, where there is nowhere to go. It eases towards a small limit rather than
+  tracking one for one, because only the current column's issues are loaded: a full page-follow
+  would open a gap with nothing behind it. On release the drag is zeroed with no animation of its
+  own and the content's own transition carries the list the rest of the way out.
+
+- 2026-09-09 A row has a **right-click menu of the columns the issue can move into**. This
+  refines, and does not reverse, the 2026-09-08 rule against a transition control on a row: what
+  was removed was a one-click Done checkmark that moved somebody's issue on a single stray click in
+  a popover that opens under the pointer. A right-click followed by a choice from a menu is two
+  deliberate acts. The destinations are named by `JiraTransition.destinationName(in:)`, the same
+  naming the issue header's menu uses, and `IssueStore.apply` still refuses a transition whose
+  workflow demands a resolution or a comment, with a message saying to finish it in the browser.
+  Transitions load on **hover**, one request per row the pointer actually crosses and cached after
+  that: a menu's contents are built when it opens, so without the hover the first right-click would
+  show an empty menu, and loading them for every row would be fifty requests per refresh.
+
+- 2026-09-09 **Every move menu offers board columns and nothing else** (`MoveOption`). A workflow
+  can transition an issue into a status no column gathers, "Blocked" on this board, and offering
+  that listed a destination the board has no place for under a name that appears nowhere else in
+  the app. Those transitions are now filtered out rather than shown under the workflow's wording,
+  in the row's right-click menu and the issue header's menu alike. The consequence to know: a
+  status that exists in the workflow but on no column cannot be reached from this app at all, which
+  is the price of the panel only ever naming things the board names.
+
 ## Privacy (local-first)
 No telemetry, no analytics, no account. Network calls, exhaustively: `works.digikala.com` (or
 whatever base URL the user sets) for the endpoints in the table above. Nothing else. Nothing the

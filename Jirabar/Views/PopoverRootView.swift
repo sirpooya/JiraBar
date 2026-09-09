@@ -15,6 +15,8 @@ struct PopoverRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Which way the next column change travels, so the list leaves the way the swipe went.
     @State private var columnGoesForward = true
+    /// How far the list is currently dragged, updated as the fingers move.
+    @State private var columnDrag: CGFloat = 0
 
     @State private var columnSwipeMonitor: Any?
     @State private var columnSwipe = SwipeTracker()
@@ -34,32 +36,51 @@ struct PopoverRootView: View {
                 // across the header goes.
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                if store.isShowingSampleData { sampleDataBanner }
-                header
-                Divider().opacity(0.5)
-                content
-                    // Fills the detached window, so the header stays at the top and the footer at
-                    // the bottom instead of the whole panel floating in the middle of a tall
-                    // window. The list already did this; the loading and empty states did not.
-                    .frame(maxHeight: isDetached ? .infinity : nil)
-                    .id(store.scope?.id ?? "no-column")
-                    // The list slides the way the swipe went, one whole view leaving and one
-                    // arriving.
-                    //
-                    // What must never come back is `withAnimation` around the scope change:
-                    // setting the scope replaces the whole tree at once (the list becomes the
-                    // loading state, the header text and the count change), and animating that
-                    // transaction told SwiftUI to move every changed view separately, so rows came
-                    // apart and avatars and half drawn text flew across the panel. Attached here,
-                    // it animates this view's arrival and departure and nothing else.
-                    .transition(.asymmetric(
-                        insertion: .move(edge: columnGoesForward ? .trailing : .leading),
-                        removal: .move(edge: columnGoesForward ? .leading : .trailing)
-                            .combined(with: .opacity)))
-                    .animation(reduceMotion ? nil : .snappy(duration: 0.28),
-                               value: store.scope?.id)
-                Divider().opacity(0.5)
-                footer
+                // One container, one transition.
+                //
+                // These six views used to sit loose in the `if`/`else`. That makes every one of
+                // them a root of the removal, so `content`'s column-paging transition also fired
+                // when an issue was opened, and took the list out whichever way the LAST column
+                // swipe happened to have gone. Half the time that was the same edge the detail
+                // was arriving from, which is what read as the push running backwards. Wrapped,
+                // only the transition below applies and the children travel with it.
+                VStack(spacing: 0) {
+                    if store.isShowingSampleData { sampleDataBanner }
+                    header
+                    Divider().opacity(0.5)
+                    content
+                        // Fills the detached window, so the header stays at the top and the footer
+                        // at the bottom instead of the whole panel floating in the middle of a
+                        // tall window. The list already did this; the loading and empty states
+                        // did not.
+                        .frame(maxHeight: isDetached ? .infinity : nil)
+                        // Follows the fingers while the swipe is happening, so the panel answers
+                        // the gesture rather than sitting still and then jumping when it ends.
+                        .offset(x: columnDrag)
+                        .id(store.scope?.id ?? "no-column")
+                        // Changing COLUMN only. Opening an issue is the wrapper's transition
+                        // below, and these two must not be confused again.
+                        //
+                        // What must never come back is `withAnimation` around the scope change:
+                        // setting the scope replaces the whole tree at once (the list becomes the
+                        // loading state, the header text and the count change), and animating that
+                        // transaction told SwiftUI to move every changed view separately, so rows
+                        // came apart and avatars and half drawn text flew across the panel.
+                        // Attached here, it animates this view's arrival and departure and
+                        // nothing else.
+                        .transition(.asymmetric(
+                            insertion: .move(edge: columnGoesForward ? .trailing : .leading),
+                            removal: .move(edge: columnGoesForward ? .leading : .trailing)
+                                .combined(with: .opacity)))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.28),
+                                   value: store.scope?.id)
+                    Divider().opacity(0.5)
+                    footer
+                }
+                // The list leaves towards the leading edge while the issue arrives from the
+                // trailing one, so the two read as one step deeper rather than as two views
+                // crossing. Going back runs the same thing in reverse.
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -184,11 +205,19 @@ struct PopoverRootView: View {
 
         if event.phase.contains(.began) {
             columnSwipe.began()
+            columnDrag = 0
         } else if event.phase.contains(.changed) {
             columnSwipe.moved(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
+            columnDrag = liveDrag()
         } else if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
             if let direction = columnSwipe.ended(threshold: Self.columnSwipeThreshold) {
+                // Straight to zero, with no animation of its own: the transition below takes over
+                // from here and carries the list the rest of the way out.
+                columnDrag = 0
                 step(forward: direction == .left)
+            } else {
+                // Not far enough. It springs back, which is the gesture being answered with a no.
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { columnDrag = 0 }
             }
         } else if event.phase.isEmpty, event.momentumPhase.isEmpty {
             let direction = SwipeTracker.direction(ofUnphasedDeltaX: event.scrollingDeltaX,
@@ -204,6 +233,18 @@ struct PopoverRootView: View {
                                              in: store.columns,
                                              forward: forward) else { return }
         select(next)
+    }
+
+    /// Where the list sits mid swipe. It gives way less at an end of the board, because there is
+    /// nothing to go to and the panel should say so rather than promising a column that is not
+    /// there.
+    private func liveDrag() -> CGFloat {
+        guard columnSwipe.isSideways else { return 0 }
+        let travel = columnSwipe.sidewaysTravel
+        let hasSomewhereToGo = ColumnPaging.column(after: store.scope,
+                                                   in: store.columns,
+                                                   forward: travel < 0) != nil
+        return SwipeTracker.rubberBand(travel, limit: hasSomewhereToGo ? 46 : 16)
     }
 
     /// Used by the swipe and by the dropdown alike, so picking "Done" from the menu travels the
@@ -247,14 +288,28 @@ struct PopoverRootView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
 
-                if store.badgeCount > 0 {
-                    Text("\(store.badgeCount)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.primary.opacity(0.08)))
-                }
+                // Always rendered, invisible at zero, so its slot never changes width.
+                //
+                // Measured 2026-09-09 off a screen recording of a column switch: `scope.didSet`
+                // sets `state = .loading`, `badgeCount` reads zero for the ~150ms the new column
+                // takes to load, and the badge disappeared. Because this control is centred,
+                // losing it narrowed the group and slid the column name 28 points right and then
+                // straight back left, with the chevron going the other way. Two direction changes
+                // in a fifth of a second, for a count that was about to come back.
+                //
+                // `monospacedDigit` plus the min width hold one and two digit counts to the same
+                // size, so 6 becoming 23 cannot move the name either. Three digits will still
+                // grow it, which is the right trade: a column with a hundred issues is not a
+                // case worth padding every other column for.
+                Text("\(store.badgeCount)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 12)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .opacity(store.badgeCount > 0 ? 1 : 0)
 
                 // Hand-drawn, because the system indicator cannot be moved to the far side of the
                 // badge. "chevron.down" is a real symbol name: a misspelled one draws nothing and

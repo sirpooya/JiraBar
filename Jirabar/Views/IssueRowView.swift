@@ -73,6 +73,34 @@ struct IssueRowView: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel(accessibilityDescription)
+        // Right-click to move, without opening the issue first.
+        //
+        // This is not the one-click Done control that used to sit on a row and was removed: that
+        // moved somebody's issue on a single stray click in a popover that opens under the
+        // pointer. A right-click and then a choice from a menu is two deliberate acts.
+        .contextMenu {
+            let moves = MoveOption.options(from: store.transitionsByKey[issue.key] ?? [],
+                                           columns: store.columns)
+            if moves.isEmpty {
+                // The menu's contents are built when it opens, so a hover that has not finished
+                // loading yet says so rather than showing an empty menu.
+                Text("Loading moves...")
+            } else {
+                Section("Move \(issue.key) to") {
+                    ForEach(moves) { move in
+                        Button(move.columnName) {
+                            Task { await store.apply(move.transition, to: issue.key) }
+                        }
+                    }
+                }
+            }
+        }
+        // Loaded on hover, so the moves are there by the time the menu opens. One request per row
+        // the pointer actually crosses, cached after that, rather than fifty on every refresh.
+        .onHover { inside in
+            guard inside else { return }
+            Task { await store.loadTransitions(for: issue.key) }
+        }
     }
 }
 

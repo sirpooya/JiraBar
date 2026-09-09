@@ -422,6 +422,51 @@ final class DecodingTests: XCTestCase {
                        "a name we have no asset for is still returned; the view checks the bundle")
     }
 
+    /// The panel follows the swipe, but only so far, and never past the limit.
+    func testTheDragFollowsTheFingersAndNeverRunsAway() {
+        XCTAssertEqual(SwipeTracker.rubberBand(0, limit: 46), 0)
+        XCTAssertEqual(SwipeTracker.rubberBand(1000, limit: 46), 46, accuracy: 0.5,
+                       "a long swipe eases into the limit rather than opening a gap")
+        XCTAssertEqual(SwipeTracker.rubberBand(-1000, limit: 46), -46, accuracy: 0.5)
+
+        let small = SwipeTracker.rubberBand(10, limit: 46)
+        XCTAssertGreaterThan(small, 8, "a small movement is followed nearly one for one")
+        XCTAssertLessThan(small, 10)
+
+        XCTAssertLessThan(SwipeTracker.rubberBand(100, limit: 16),
+                          SwipeTracker.rubberBand(100, limit: 46),
+                          "an end of the board gives way less, which is how it says no")
+    }
+
+    /// The panel must not slide sideways while the list is being scrolled up and down.
+    func testASidewaysGestureIsToldApartFromAScroll() {
+        var tracker = SwipeTracker()
+        tracker.began()
+        tracker.moved(deltaX: 4, deltaY: 60)
+        XCTAssertFalse(tracker.isSideways)
+
+        tracker.began()
+        tracker.moved(deltaX: 40, deltaY: 6)
+        XCTAssertTrue(tracker.isSideways)
+        XCTAssertEqual(tracker.sidewaysTravel, 40)
+    }
+
+    /// Every move menu offers board columns and nothing else, named as the board names them.
+    func testOnlyMovesThatLandInAColumnAreOffered() {
+        let columns = [BoardColumn(name: "🟢 Done", statusIDs: ["10007"])]
+        let json = """
+        {"transitions":[{"id":"31","name":"Finish","to":{"id":"10007","name":"Closed"}},
+                        {"id":"32","name":"Blocked","to":{"id":"10099","name":"Blocked"}}]}
+        """.data(using: .utf8)!
+        let transitions = try! JSONDecoder().decode(JiraTransitionsResponse.self, from: json).transitions
+        let offered = MoveOption.options(from: transitions, columns: columns)
+
+        XCTAssertEqual(offered.map(\.columnName), ["🟢 Done"],
+                       "Blocked is a status this board has no column for, so it is not offered")
+        XCTAssertEqual(offered.first?.transition.id, "31",
+                       "the workflow's own id still drives the move")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

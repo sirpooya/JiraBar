@@ -36,6 +36,7 @@ section when a release is cut.
 - A task or sub-task shows its parent story, and an epic link when it has one
 - Switching column slides the list in the direction you went, by swipe or from the dropdown
 - A task's row carries the story it belongs to as a tag
+- Right-click an issue in the list to move it to another column without opening it
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -63,6 +64,8 @@ section when a release is cut.
 - Two-finger swipes work anywhere on the panel: sideways over the list moves between columns, and to the right on an issue goes back
 - Type and priority sit in the same badge as the chips beside them
 - Switching column slides the list the way you swiped, and going back to the list is no longer quicker than going in
+- The list follows your fingers while you swipe between columns, springs back when the swipe is too small, and gives way less at either end of the board
+- Move menus list only the board's columns, so a workflow status the board has no column for is no longer offered
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -90,4 +93,6 @@ section when a release is cut.
 - Issue types whose icon this Jira serves as its own avatar, Task among them, now show it
 - Switching column fades instead of tearing the list apart mid animation
 - The detached window fills with the panel instead of leaving it floating in the middle
+- The issue count badge no longer disappears while a column loads, so the column name and chevron stop jumping sideways on every column switch.
+- Opening an issue now always takes the list out towards the leading edge, instead of following whichever direction the last column swipe went.
 

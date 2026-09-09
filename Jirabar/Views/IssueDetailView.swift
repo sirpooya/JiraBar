@@ -377,12 +377,12 @@ struct IssueDetailView: View {
     private var moveMenu: some View {
         if isBusy {
             ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 16)
-        } else if !transitions.isEmpty {
+        } else if !moveOptions.isEmpty {
             Menu {
                 Section("Move from \(issue.statusName) to") {
-                    ForEach(transitions) { transition in
-                        Button(label(for: transition)) {
-                            Task { await store.apply(transition, to: issue.key) }
+                    ForEach(moveOptions) { option in
+                        Button(option.columnName) {
+                            Task { await store.apply(option.transition, to: issue.key) }
                         }
                     }
                 }
@@ -398,6 +398,11 @@ struct IssueDetailView: View {
         }
     }
 
+    /// Only the moves that land in one of this board's columns. See `MoveOption`.
+    private var moveOptions: [MoveOption] {
+        MoveOption.options(from: transitions, columns: store.columns)
+    }
+
     /// A destination reads as the board column it lands in, named exactly as Jira names it.
     ///
     /// The column name, not the transition's own name: the dropdown at the top of the panel says
@@ -407,12 +412,6 @@ struct IssueDetailView: View {
     /// Nothing is added to the name. An earlier version put an emoji in front of every entry,
     /// which meant two glyphs on the columns already named with one, and an invented glyph on
     /// the columns that are not.
-    private func label(for transition: JiraTransition) -> String {
-        BoardColumn.name(forStatusID: transition.to?.id, in: store.columns)
-            ?? transition.to?.name
-            ?? transition.name
-    }
-
     /// Every move the workflow allows right now, Done included. The server decides what is in
     /// this list, so a workflow change needs no change here.
     private var transitions: [JiraTransition] { store.transitionsByKey[issue.key] ?? [] }

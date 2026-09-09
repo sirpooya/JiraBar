@@ -116,3 +116,25 @@ extension BoardColumn {
         return columns.first { $0.statusIDs.contains(id) }?.name
     }
 }
+
+/// A move the user is offered: a transition, named by the board column it lands in.
+///
+/// Only moves that land in a column are offered. A workflow can transition an issue into a status
+/// no column gathers, "Blocked" on this board, and showing that meant the menu listed a
+/// destination the board has no place for, under a name that appears nowhere else in the app.
+struct MoveOption: Identifiable, Hashable {
+    let transition: JiraTransition
+    let columnName: String
+
+    var id: String { transition.id }
+
+    static func options(from transitions: [JiraTransition],
+                        columns: [BoardColumn]) -> [MoveOption] {
+        transitions.compactMap { transition in
+            guard let name = BoardColumn.name(forStatusID: transition.to?.id, in: columns) else {
+                return nil
+            }
+            return MoveOption(transition: transition, columnName: name)
+        }
+    }
+}
