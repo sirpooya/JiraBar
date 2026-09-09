@@ -462,14 +462,31 @@ final class IssueStore {
 
     /// Loads reactions for a whole thread. `/rest/internal/2` is Jira's own undocumented UI API,
     /// so a failure here is silent: the chips just do not appear, and the thread still reads.
+    /// False once this instance has answered 404 to a reactions read.
+    ///
+    /// works.digikala.com does not serve `/rest/internal/2` at all: the read 404s, which is why
+    /// every write shape did too. An affordance that always errors is worse than no affordance, so
+    /// the picker is hidden rather than left to fail.
+    private(set) var reactionsSupported = true
+
     func loadReactions(for key: String) async {
-        guard forcedState == nil, let client else { return }
+        guard forcedState == nil, reactionsSupported, let client else { return }
         for comment in commentsByKey[key] ?? [] {
-            if let found = try? await client.reactions(issueKey: key, commentID: comment.id) {
-                reactionsByComment[comment.id] = found
+            do {
+                reactionsByComment[comment.id] = try await client.reactions(issueKey: key,
+                                                                           commentID: comment.id)
+                continue
+            } catch JiraError.notFound {
+                // This Jira has no reactions API. Stop asking, and take the picker off the thread.
+                reactionsSupported = false
+                reactionsByComment = [:]
+                return
+            } catch {
+                continue
             }
         }
     }
+
 
     /// Adds your reaction, or takes it back if it is already yours. Taking back your own reaction
     /// is not the comment-delete Jirabar refuses to have: it cannot touch anyone else's content.

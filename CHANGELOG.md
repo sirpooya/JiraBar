@@ -37,6 +37,7 @@ section when a release is cut.
 - Switching column slides the list in the direction you went, by swipe or from the dropdown
 - A task's row carries the story it belongs to as a tag
 - Right-click an issue in the list to move it to another column without opening it
+- Command Return in the comment box now posts the comment, or saves it when editing. Return on its own still starts a new line.
 
 ### Changed
 - The issue title is now the detail header; the issue key moved to the browser link
@@ -69,6 +70,10 @@ section when a release is cut.
 - Swiping between board columns now slides in a placeholder list that matches the real row layout, and fills in the issues when they arrive, instead of showing a spinner on an empty panel.
 - While swiping between board columns, the next or previous column's placeholder now travels in from the edge with your fingers instead of uncovering empty space.
 - Releasing a column swipe now carries the gesture through in one motion: the current column slides out and the new one slides in from where the placeholder was, instead of snapping back first.
+- Moving an issue to another column now animates: the row fades out and the rows below it slide up to close the gap, instead of the list jumping.
+- Every field value under the header reads as a badge, story points included, not only the tag lists
+- Components, labels, story points and the parent story join the badges under the title instead of sitting in a table below them
+- The story points badge reads "4 SP" rather than a bare number
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -100,4 +105,7 @@ section when a release is cut.
 - Opening an issue now always takes the list out towards the leading edge, instead of following whichever direction the last column swipe went.
 - Moves whose destination Jira reports without a status id are offered again, instead of looking like the workflow refused them
 - The issue count badge in the header no longer blinks out and back when switching columns. It stays in place and rolls to the new value.
+- The header no longer grows by a fraction of a point while a refresh is in flight, which was nudging the divider and the whole list down and back.
+- Cmd+V, Cmd+C, Cmd+X, Cmd+A and undo now work with a non-Latin keyboard layout selected. They matched the letter printed on the key, so switching to Persian to write a comment silently broke pasting an image.
+- The add-a-reaction control is hidden on a Jira that has no reactions API, instead of failing with "Not found on this server" every time
 

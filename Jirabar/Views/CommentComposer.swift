@@ -9,6 +9,10 @@ import SwiftUI
 /// Not private: the paste path is covered by tests, which need to build one of these.
 final class PastingTextView: NSTextView {
     var onPasteImage: ((Data) -> Void)?
+    /// Cmd+Return. Held here rather than on a SwiftUI `.keyboardShortcut`, because those dispatch
+    /// through `NSApp.mainMenu` and this app's menu is owned and replaced by its `MenuBarExtra`,
+    /// which is the same reason Cmd+V had to be intercepted on this view.
+    var onSend: (() -> Void)?
     /// Injected so a test can hand over a pasteboard of its own instead of the system one.
     var pasteboardProvider: () -> NSPasteboard = { .general }
 
@@ -24,19 +28,35 @@ final class PastingTextView: NSTextView {
     /// a paste meant for something else.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard window?.firstResponder === self,
-              let key = event.charactersIgnoringModifiers?.lowercased() else {
+        guard window?.firstResponder === self else {
             return super.performKeyEquivalent(with: event)
         }
 
-        switch (flags, key) {
-        case (.command, "v"): paste(nil)
-        case (.command, "c"): copy(nil)
-        case (.command, "x"): cut(nil)
-        case (.command, "a"): selectAll(nil)
-        case (.command, "z"): undoManager?.undo()
-        case ([.command, .shift], "z"): undoManager?.redo()
-        default: return super.performKeyEquivalent(with: event)
+        // Cmd+Return sends. Checked before the editing shortcuts because it is not one of them:
+        // it runs the composer's own action rather than an AppKit editing selector.
+        if flags == .command,
+           ComposerShortcut.isSend(keyCode: event.keyCode, command: true),
+           let onSend {
+            onSend()
+            return true
+        }
+
+        // By key CODE, never by the character: on the Persian layout Cmd+V reports a Persian
+        // letter, so matching "v" dropped the paste. See `EditingShortcut`.
+        guard flags == .command || flags == [.command, .shift],
+              let shortcut = EditingShortcut.match(keyCode: event.keyCode,
+                                                   command: flags.contains(.command),
+                                                   shift: flags.contains(.shift)) else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch shortcut {
+        case .paste: paste(nil)
+        case .copy: copy(nil)
+        case .cut: cut(nil)
+        case .selectAll: selectAll(nil)
+        case .undo: undoManager?.undo()
+        case .redo: undoManager?.redo()
         }
         return true
     }
@@ -75,6 +95,8 @@ struct CommentEditor: NSViewRepresentable {
     @Binding var text: String
     /// Reported back as the text is laid out, so the box is as tall as what has been typed.
     @Binding var height: CGFloat
+    /// Cmd+Return. Runs the same action as the Comment button, guards included.
+    var onSend: () -> Void = {}
     var onPasteImage: (Data) -> Void
 
     /// One line, and the height the composer sits at when the draft is empty.
@@ -87,6 +109,7 @@ struct CommentEditor: NSViewRepresentable {
         let textView = PastingTextView()
         textView.delegate = context.coordinator
         textView.onPasteImage = onPasteImage
+        textView.onSend = onSend
         textView.font = .systemFont(ofSize: 12)
         textView.isRichText = false
         textView.allowsUndo = true
@@ -105,6 +128,7 @@ struct CommentEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? PastingTextView else { return }
         textView.onPasteImage = onPasteImage
+        textView.onSend = onSend
         // Only when it differs, or every keystroke would reset the insertion point to the end.
         if textView.string != text { textView.string = text }
         context.coordinator.applyDirection(textView)
@@ -193,7 +217,9 @@ struct CommentComposer: View {
                     .foregroundStyle(.secondary)
             }
 
-            CommentEditor(text: $store.commentDraft, height: $editorHeight) { data in
+            CommentEditor(text: $store.commentDraft,
+                          height: $editorHeight,
+                          onSend: { Task { await store.submitComment(on: issueKey) } }) { data in
                 Task { await store.attachPastedImage(data, to: issueKey) }
             }
             // One line at rest, taller as lines are typed, and scrolling past five. It used to be
@@ -228,6 +254,7 @@ struct CommentComposer: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .help(isEditing ? "Save (Command Return)" : "Comment (Command Return)")
                 .disabled(store.commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           || store.isSubmittingComment)
             }

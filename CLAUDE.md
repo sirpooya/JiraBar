@@ -303,9 +303,20 @@ carries no path.
 - 2026-09-08 Comment authors are matched by **username**, never display name. The same person
   reads as "Pouya Kamel" or "Pooya Kamel" depending on who transliterated it, and matching on the
   display name silently removed the Edit link.
-- 2026-09-08 Reactions come from `/rest/internal/2/.../reactions`, which is Jira's own
-  undocumented UI API. Every field is optional and a failure is silent: the chips do not appear
-  and the thread still reads. NOT YET VERIFIED against works.digikala.com.
+- 2026-09-09 **works.digikala.com does not serve a reactions API. Do not try to make reactions
+  work by guessing endpoints.** Proven by probing, not inferred: on this instance a real endpoint
+  answers 401 unauthenticated (`/rest/api/2/myself`, `/rest/api/2/serverInfo`), a path that does
+  not exist answers 302 to `login.jsp`, and a deliberately bogus path answers the same 302, so a
+  302 means nothing. Every `/rest/internal/2/...` path answers 404, including a comment's own URL
+  without `/reactions`, so the whole namespace is absent. The **read** 404s, which is why all four
+  write shapes did: they were all under that namespace.
+  The picker is therefore hidden the moment a reactions read returns 404
+  (`IssueStore.reactionsSupported`, `composedHTML(offersReactions:)`), because a control that
+  answers "Not found on this server" every time is worse than no control. The code stays for an
+  instance that does serve it.
+  Jira's own web UI on this host does show a reaction bar, so some endpoint exists. The only way
+  to find it is to capture what that UI calls (browser devtools, Network, XHR, click an emoji).
+  One capture is enough; guessing has already cost several rounds.
 - 2026-09-08 The detail header is the issue title. The key used to occupy that slot, which put a
   reference number in the most prominent place on screen; it is still on the browser link.
 - 2026-09-08 The seen-issue set is **per column**, keyed by the column name. One shared set would

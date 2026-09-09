@@ -141,66 +141,46 @@ struct IssueDetailView: View {
         .padding(.vertical, 9)
     }
 
+    /// Everything the issue is, as one wrapping row of badges.
+    ///
+    /// The fields Jira shows down its own side (components, labels, story points, the parent
+    /// story) used to sit below in a label and value table. They are the same kind of fact as the
+    /// status and the priority, so they read as one set of badges rather than a row of chips with
+    /// a small table under it. What each badge is is in its tooltip, since a bare "4" says little
+    /// on its own.
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                StatusPill(name: issue.statusName,
-                           categoryKey: issue.fields.status?.statusCategory?.key)
-                if let type = issue.fields.issuetype?.name {
-                    JiraIconChip(url: issue.fields.issuetype?.iconUrl,
-                                 kind: .issueType,
-                                 text: type,
-                                 store: store)
-                }
-                if let priority = issue.fields.priority?.name {
-                    JiraIconChip(url: issue.fields.priority?.iconUrl,
-                                 kind: .priority,
-                                 text: priority,
-                                 store: store)
-                }
-                // Down here with the issue's other attributes rather than up in the header, where
-                // it sat between the title and the buttons and read as one of the controls.
-                if let platform = issue.platform {
-                    PlatformPill(platform: platform)
-                }
-                DueBadge(due: issue.dueDate)
+        FlowLayout(spacing: 6, lineSpacing: 5) {
+            StatusPill(name: issue.statusName,
+                       categoryKey: issue.fields.status?.statusCategory?.key)
+
+            if let type = issue.fields.issuetype?.name {
+                JiraIconChip(url: issue.fields.issuetype?.iconUrl,
+                             kind: .issueType,
+                             text: type,
+                             store: store)
             }
-            if let parent = issue.fields.parent {
-                Text("Parent: \(parent.key) \(parent.fields?.summary ?? "")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
+            if let priority = issue.fields.priority?.name {
+                JiraIconChip(url: issue.fields.priority?.iconUrl,
+                             kind: .priority,
+                             text: priority,
+                             store: store)
             }
-            // The fields Jira shows down the side of an issue. Only the ones this issue actually
-            // has: an empty Component/s or no story points is a row that says nothing.
+
+            // Down here with the issue's other attributes rather than up in the header, where it
+            // sat between the title and the buttons and read as one of the controls.
+            if let platform = issue.platform {
+                PlatformPill(platform: platform)
+            }
+
+            DueBadge(due: issue.dueDate)
+
             ForEach(store.fieldRowsByKey[issue.key] ?? [], id: \.self) { row in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(row.label)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 96, alignment: .leading)
-                    if row.isTagList {
-                        HStack(spacing: 4) {
-                            ForEach(row.values, id: \.self) { value in
-                                Text(value)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.primary.opacity(0.07)))
-                            }
-                        }
-                    } else {
-                        Text(row.value)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                ForEach(row.values, id: \.self) { value in
+                    FieldChip(text: row.badgeText(for: value),
+                              help: "\(row.label): \(value)")
                 }
             }
-
-
         }
     }
 
@@ -243,7 +223,8 @@ struct IssueDetailView: View {
                     let thread = JiraComment.composedHTML(
                         comments,
                         editableIDs: store.editableCommentIDs(for: issue.key),
-                        reactions: store.reactionsByComment)
+                        reactions: store.reactionsByComment,
+                        offersReactions: store.reactionsSupported)
 
                     DescriptionWebView(html: store.inliningImages(in: thread),
                                        isDark: colorScheme == .dark,
@@ -438,6 +419,25 @@ struct JiraIconChip: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(Capsule().fill(Color.primary.opacity(0.07)))
+    }
+}
+
+/// One value from the fields under the header. Same capsule as the chips in the row above them.
+struct FieldChip: View {
+    let text: String
+    /// What this value is, since the badge shows only the value: "Story Points: 4".
+    var help: String?
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .help(help ?? text)
     }
 }
 

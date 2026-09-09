@@ -111,27 +111,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installEditingShortcuts() {
         editingShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // By key CODE, never by the character. `charactersIgnoringModifiers` is whatever the
+            // active input source prints on the key, so on the Persian layout Cmd+V reported a
+            // Persian letter and every one of these shortcuts silently stopped working. See
+            // `EditingShortcut`.
             guard flags == .command || flags == [.command, .shift],
-                  let key = event.charactersIgnoringModifiers?.lowercased(),
+                  let shortcut = EditingShortcut.match(keyCode: event.keyCode,
+                                                       command: flags.contains(.command),
+                                                       shift: flags.contains(.shift)),
                   let responder = event.window?.firstResponder
                       ?? NSApp.keyWindow?.firstResponder else { return event }
 
-            let action: Selector?
-            switch (flags, key) {
-            case (.command, "v"): action = Selector(("paste:"))
-            case (.command, "c"): action = Selector(("copy:"))
-            case (.command, "x"): action = Selector(("cut:"))
-            case (.command, "a"): action = Selector(("selectAll:"))
-            case (.command, "z"): action = Selector(("undo:"))
-            case ([.command, .shift], "z"): action = Selector(("redo:"))
-            default: action = nil
-            }
-
-            guard let action else { return event }
+            let action = Selector((shortcut.selectorName))
 
             if responder.responds(to: action) {
                 #if DEBUG
-                FileHandle.standardError.write(Data("[keys] cmd+\(key) -> \(action) on \(type(of: responder))\n".utf8))
+                FileHandle.standardError.write(Data("[keys] \(shortcut) -> \(action) on \(type(of: responder))\n".utf8))
                 #endif
                 NSApp.sendAction(action, to: responder, from: nil)
                 return nil
@@ -139,8 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Undo and redo live on the undo manager rather than on the responder itself.
             if let undo = responder.undoManager {
-                if action == Selector(("undo:")), undo.canUndo { undo.undo(); return nil }
-                if action == Selector(("redo:")), undo.canRedo { undo.redo(); return nil }
+                if shortcut == .undo, undo.canUndo { undo.undo(); return nil }
+                if shortcut == .redo, undo.canRedo { undo.redo(); return nil }
             }
             return event
         }

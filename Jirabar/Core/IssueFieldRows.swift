@@ -70,16 +70,19 @@ struct IssueFieldRow: Hashable {
     let label: String
     let value: String
 
-    /// The individual values, for the fields that hold a list of them.
+    /// What a value reads as on its badge. Story points carry their unit: "4" among a row of
+    /// words says nothing, "4 SP" says what it is without needing a label beside it.
+    func badgeText(for value: String) -> String {
+        label == "Story Points" ? "\(value) SP" : value
+    }
+
+    /// The individual values. A field holding one value yields one, so every row can be drawn
+    /// the same way: a chip each.
     var values: [String] {
         value.components(separatedBy: ", ").filter { !$0.isEmpty }
     }
 
-    /// Components and labels are tags in Jira and read as tags here: one chip each, rather than
-    /// a comma separated line that has to be parsed by eye.
-    var isTagList: Bool {
-        label == "Component/s" || label == "Labels"
-    }
+
 }
 
 enum IssueFieldRows {

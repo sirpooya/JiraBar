@@ -167,16 +167,37 @@ struct PopoverRootView: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
 
-                if store.isRefreshing {
-                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 16)
-                } else {
-                    Button(action: onRefresh) {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .medium))
+                // One fixed box, both states inside it.
+                //
+                // These used to size themselves, and a small `ProgressView` lays out slightly
+                // TALLER than the 11 point glyph it replaces. `scaleEffect` does not help: it is
+                // a drawing transform and leaves the layout box the size it was, and the old
+                // `.frame(width: 16)` pinned only the width. So the header, which is as tall as
+                // its tallest child, grew by about a point and a half for exactly as long as a
+                // refresh was in flight, and the divider and the whole list under it stepped down
+                // and back. Measured 2026-09-09 off a screen recording: the divider sat at 124
+                // and moved to 127 on the one frame the spinner was up.
+                //
+                // Pinning height as well as width makes the swap size neutral, which is what keeps
+                // the bar still. Anything else dropped in here must keep the fixed frame.
+                Group {
+                    if store.isRefreshing {
+                        ProgressView().controlSize(.small).scaleEffect(0.7)
+                    } else {
+                        Button(action: onRefresh) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Refresh now")
+                        .accessibilityLabel("Refresh now")
                     }
-                    .buttonStyle(.plain)
-                    .help("Refresh now")
-                    .accessibilityLabel("Refresh now")
                 }
+                // 14, not 16. The height here has to match what the 11 point glyph already
+                // occupied, or pinning it FIXES the bar at a new height instead of at the one it
+                // had: 16 held the divider perfectly still, one point lower than before, which is
+                // still a layout change. 14 holds it still at the height it always was.
+                .frame(width: 16, height: 14)
 
                 Button(action: onToggleDetach) {
                     // A pin, because it says what detaching is for rather than what it makes: the
@@ -514,6 +535,8 @@ struct IssueListView: View {
     @Bindable var store: IssueStore
     var fillsHeight = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: 0) {
             if let error = store.actionError {
@@ -539,10 +562,26 @@ struct IssueListView: View {
                                          store.actionError = nil
                                          store.selectedKey = issue.key
                                      })
+                            // A row that leaves fades and gives up its height, so the rows under
+                            // it are seen to close the gap. Moving an issue to another column used
+                            // to remove it between one frame and the next: the list simply had one
+                            // fewer row and everything below had teleported up a notch, which
+                            // reads as the list glitching rather than as the issue going somewhere.
+                            .transition(.opacity.combined(
+                                with: .scale(scale: 0.96, anchor: .top)))
                     }
                 }
                 .padding(.horizontal, 5)
                 .padding(.vertical, 5)
+                // Keyed on WHICH issues are present, never on the issues themselves. A poll that
+                // returns the same rows with a newer `updated` timestamp changes the values but
+                // not the identities, and animating that would make the list twitch every time
+                // the poller came back.
+                //
+                // This cannot revive the flying-avatars bug: a column change replaces this whole
+                // view through `.id()`, so a freshly built list never runs this animation.
+                .animation(reduceMotion ? nil : .snappy(duration: 0.3),
+                           value: issues.map(\.id))
             }
             // Roughly five rows in the popover, which cannot be allowed to grow past the bottom
             // of the screen. In the detached window the list takes the height the window has.

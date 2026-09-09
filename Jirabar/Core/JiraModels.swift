@@ -198,9 +198,13 @@ extension JiraComment {
     /// Comments in `editableIDs` get an Edit link. There is deliberately NO delete link, and there
     /// must never be one: deleting a comment is done in the browser, where it takes more than one
     /// stray click in a popover that opens under the cursor.
+    /// - Parameter offersReactions: false on an instance with no reactions API, which takes the
+    ///   picker off the thread rather than leaving a control that answers "Not found on this
+    ///   server" every time it is used.
     static func composedHTML(_ comments: [JiraComment],
                              editableIDs: Set<String> = [],
                              reactions: [String: [JiraReaction]] = [:],
+                             offersReactions: Bool = true,
                              now: Date = Date()) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
@@ -227,9 +231,11 @@ extension JiraComment {
                 .joined()
             // `data-comment` as well as the href: the page posts the chip's position so the
             // picker can open beside it, and falls back to the link if that script never runs.
+            if offersReactions {
             chips += "<a class=\"jrp\" data-comment=\"\(comment.id)\" "
                 + "href=\"\(actionScheme)://picker/\(comment.id)\" "
                 + "title=\"Add a reaction\">\(addReactionGlyph)</a>"
+            }
 
             var actions = "<div class=\"jce\">\(chips)"
             if editableIDs.contains(comment.id) {

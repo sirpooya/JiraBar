@@ -485,6 +485,32 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(offered.count, 2, "Blocked still has no column, so it is still not offered")
     }
 
+    /// The badges show values with no label beside them, so a bare number needs its unit.
+    func testStoryPointsCarryTheirUnitAndNothingElseDoes() {
+        let points = IssueFieldRow(label: "Story Points", value: "0.5")
+        XCTAssertEqual(points.badgeText(for: "0.5"), "0.5 SP")
+
+        let labels = IssueFieldRow(label: "Labels", value: "Core")
+        XCTAssertEqual(labels.badgeText(for: "Core"), "Core")
+    }
+
+    /// works.digikala.com does not serve the reactions API: the read 404s, so the picker would
+    /// error every single time it was used.
+    func testThePickerIsAbsentOnAnInstanceWithNoReactionsAPI() {
+        let json = """
+        {"comments":[{"id":"11","author":{"name":"pooya","displayName":"Pouya Kamel"},
+         "renderedBody":"<p>hi</p>","created":"2026-09-08T11:04:33.000+0330"}]}
+        """.data(using: .utf8)!
+        let thread = try! JSONDecoder().decode(JiraCommentsResponse.self, from: json).comments
+
+        let without = JiraComment.composedHTML(thread, offersReactions: false)
+        XCTAssertFalse(without.contains("\(JiraComment.actionScheme)://picker/"))
+        XCTAssertTrue(without.contains("<p>hi</p>"), "the thread still reads")
+
+        let with = JiraComment.composedHTML(thread, offersReactions: true)
+        XCTAssertTrue(with.contains("\(JiraComment.actionScheme)://picker/11"))
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {
@@ -864,5 +890,93 @@ final class ReactionTests: XCTestCase {
         for emoji in JiraReaction.palette {
             XCTAssertNotNil(JiraReaction.emojiId(for: emoji), "\(emoji) has no codepoint")
         }
+    }
+}
+
+// MARK: - Editing shortcuts survive a keyboard layout change
+
+/// The bug these protect: both paste paths matched `charactersIgnoringModifiers` against "v", and
+/// that string is whatever the ACTIVE INPUT SOURCE prints on the key. With Persian selected, Cmd+V
+/// reported a Persian letter and paste silently did nothing. It was reported as "pasting an image
+/// only works when the comment box is empty", because the box had text precisely when the layout
+/// had been switched to write it.
+final class EditingShortcutTests: XCTestCase {
+
+    // kVK_ANSI_*, positional and identical on every layout.
+    private let a: UInt16 = 0x00
+    private let z: UInt16 = 0x06
+    private let x: UInt16 = 0x07
+    private let c: UInt16 = 0x08
+    private let v: UInt16 = 0x09
+
+    func testMatchesByPositionSoTheLayoutCannotChangeTheAnswer() {
+        XCTAssertEqual(EditingShortcut.match(keyCode: v, command: true, shift: false), .paste)
+        XCTAssertEqual(EditingShortcut.match(keyCode: c, command: true, shift: false), .copy)
+        XCTAssertEqual(EditingShortcut.match(keyCode: x, command: true, shift: false), .cut)
+        XCTAssertEqual(EditingShortcut.match(keyCode: a, command: true, shift: false), .selectAll)
+    }
+
+    func testShiftOnlyDistinguishesRedoFromUndo() {
+        XCTAssertEqual(EditingShortcut.match(keyCode: z, command: true, shift: false), .undo)
+        XCTAssertEqual(EditingShortcut.match(keyCode: z, command: true, shift: true), .redo)
+        // Shift must not turn any of the others into something else.
+        XCTAssertNil(EditingShortcut.match(keyCode: v, command: true, shift: true))
+    }
+
+    func testCommandIsRequired() {
+        for shortcut in EditingShortcut.allCases {
+            _ = shortcut
+        }
+        XCTAssertNil(EditingShortcut.match(keyCode: v, command: false, shift: false),
+                     "A bare V must stay a typed letter, not a paste.")
+        XCTAssertNil(EditingShortcut.match(keyCode: a, command: false, shift: false))
+    }
+
+    func testUnrelatedKeysAreLeftAlone() {
+        // 0x0B is B: no editing shortcut, so the event must pass through untouched.
+        XCTAssertNil(EditingShortcut.match(keyCode: 0x0B, command: true, shift: false))
+    }
+
+    func testEverySelectorIsAnAppKitEditingAction() {
+        XCTAssertEqual(EditingShortcut.paste.selectorName, "paste:")
+        XCTAssertEqual(EditingShortcut.copy.selectorName, "copy:")
+        XCTAssertEqual(EditingShortcut.cut.selectorName, "cut:")
+        XCTAssertEqual(EditingShortcut.selectAll.selectorName, "selectAll:")
+        XCTAssertEqual(EditingShortcut.undo.selectorName, "undo:")
+        XCTAssertEqual(EditingShortcut.redo.selectorName, "redo:")
+    }
+}
+
+// MARK: - Cmd+Return sends the comment
+
+final class ComposerShortcutTests: XCTestCase {
+
+    private let returnKey: UInt16 = 0x24
+    private let keypadEnter: UInt16 = 0x4C
+
+    func testCommandReturnSends() {
+        XCTAssertTrue(ComposerShortcut.isSend(keyCode: returnKey, command: true))
+        XCTAssertTrue(ComposerShortcut.isSend(keyCode: keypadEnter, command: true),
+                      "The keypad's Enter is the same intent as Return.")
+    }
+
+    /// The one that matters. A comment here is regularly several lines, and the composer grows to
+    /// five of them on purpose, so a bare Return has to stay a newline.
+    func testBareReturnDoesNotSend() {
+        XCTAssertFalse(ComposerShortcut.isSend(keyCode: returnKey, command: false))
+        XCTAssertFalse(ComposerShortcut.isSend(keyCode: keypadEnter, command: false))
+    }
+
+    func testOtherKeysDoNotSend() {
+        // 0x09 is V: Cmd+V is a paste, and must never be mistaken for a send.
+        XCTAssertFalse(ComposerShortcut.isSend(keyCode: 0x09, command: true))
+        XCTAssertFalse(ComposerShortcut.isSend(keyCode: 0x00, command: true))
+    }
+
+    /// Return carries no editing selector, or the key monitor would swallow it before the composer
+    /// ever saw it.
+    func testReturnIsNotAnEditingShortcut() {
+        XCTAssertNil(EditingShortcut.match(keyCode: returnKey, command: true, shift: false))
+        XCTAssertNil(EditingShortcut.match(keyCode: keypadEnter, command: true, shift: false))
     }
 }
