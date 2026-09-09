@@ -21,6 +21,14 @@ enum ContentState: Equatable {
     /// Anything else, shown with its own message rather than pretending to be one of the above.
     case failed(String)
 
+    /// True while a column is waiting for its first result. The panel keys the skeleton and the
+    /// cross fade to the rows off this and nothing else, so an ordinary refresh, which replaces
+    /// the same rows with newer ones, animates nothing.
+    var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
+
     var issues: [JiraIssue] {
         if case .issues(let list) = self { return list }
         return []

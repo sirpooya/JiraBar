@@ -507,6 +507,17 @@ carries no path.
   status that exists in the workflow but on no column cannot be reached from this app at all, which
   is the price of the panel only ever naming things the board names.
 
+- 2026-09-09 A move is matched to its column by **status id first and status name second**
+  (`MoveOption.columnName`). `to.id` is optional in Jira's transitions answer, and matching on the
+  id alone silently dropped every transition that arrived without one, which is indistinguishable
+  from the workflow refusing that move: Rejected and Done went missing from QC Ready's menu for
+  this reason and looked like a Jira problem. The name comparison strips the coloured circle from
+  the column's own name, so "Done" matches "🟢 Done".
+  What the app cannot do anything about: `GET /issue/{key}/transitions` returns only what the
+  workflow permits from the issue's current status. A move the Jira board offers and this list
+  omits is a workflow question, not a bug here. Each load writes what Jira offered to stderr in
+  DEBUG (`[moves] KEY: name->destination(id)`), which is how to tell the two apart.
+
 ## Privacy (local-first)
 No telemetry, no analytics, no account. Network calls, exhaustively: `works.digikala.com` (or
 whatever base URL the user sets) for the endpoints in the table above. Nothing else. Nothing the

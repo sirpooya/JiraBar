@@ -467,6 +467,24 @@ final class DecodingTests: XCTestCase {
                        "the workflow's own id still drives the move")
     }
 
+    /// `to.id` is optional in Jira's answer, and matching on it alone dropped those transitions
+    /// entirely, which looked like the workflow refusing the move.
+    func testAMoveIsMatchedByStatusNameWhenNoIdCameWithIt() {
+        let columns = [BoardColumn(name: "🟢 Done", statusIDs: ["10007"]),
+                       BoardColumn(name: "🔴 Rejected", statusIDs: ["10009"])]
+        let json = """
+        {"transitions":[{"id":"41","name":"Finish","to":{"name":"Done"}},
+                        {"id":"42","name":"Reject","to":{"name":"rejected"}},
+                        {"id":"43","name":"Park","to":{"name":"Blocked"}}]}
+        """.data(using: .utf8)!
+        let transitions = try! JSONDecoder().decode(JiraTransitionsResponse.self, from: json).transitions
+        let offered = MoveOption.options(from: transitions, columns: columns)
+
+        XCTAssertEqual(offered.map(\.columnName), ["🟢 Done", "🔴 Rejected"],
+                       "matched on name, and the board's own name with its circle is what shows")
+        XCTAssertEqual(offered.count, 2, "Blocked still has no column, so it is still not offered")
+    }
+
     /// A Jira select field arrives in several shapes depending on configuration. Throwing on the
     /// wrong one would take the whole search response down with it.
     func testCustomFieldAbsorbsEveryShapeItArrivesIn() {

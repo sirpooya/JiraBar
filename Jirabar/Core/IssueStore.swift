@@ -10,7 +10,17 @@ import Observation
 @MainActor
 @Observable
 final class IssueStore {
-    private(set) var state: ContentState = .loading
+    private(set) var state: ContentState = .loading {
+        didSet {
+            // Only a real result updates this. A failure or a genuinely empty column must not
+            // shrink the placeholder the NEXT column switch draws, because the next column has
+            // nothing to do with this one's outcome.
+            if case .issues(let list) = state { lastIssueCount = list.count }
+        }
+    }
+
+    /// The last row count actually shown. See the `didSet` above.
+    private(set) var lastIssueCount = 0
     private(set) var accountName: String?
     /// The username from /myself, which is what author matching uses.
     private(set) var accountUsername: String?
@@ -156,6 +166,21 @@ final class IssueStore {
 
     /// The menu bar count: whatever the selected column holds.
     var badgeCount: Int { state.openCount }
+
+    /// The count the HEADER shows, which is not always the menu bar's.
+    ///
+    /// While a column is loading this holds the number that was on screen a moment ago, so
+    /// switching columns changes the value in place instead of taking the badge away and putting
+    /// it back a fifth of a second later. Only `.loading` gets that grace: an empty column and
+    /// every failure answer for themselves, so the rule that a stale badge on an expired token is
+    /// a worse lie than no badge is untouched. `badgeCount` above, which is what the menu bar
+    /// draws, is never softened this way.
+    var displayCount: Int { state.isLoading ? lastIssueCount : state.openCount }
+
+    /// Rows for the loading skeleton. The outgoing column's count is the only guess available for
+    /// the incoming one. Clamped so a first launch still draws a panel and a very long column does
+    /// not draw fifty placeholders nobody will see before the real rows arrive.
+    var skeletonRowCount: Int { min(max(lastIssueCount, 4), 7) }
 
     // MARK: - Board
 
@@ -317,6 +342,12 @@ final class IssueStore {
         defer { loadingTransitions.remove(key) }
         if let list = try? await client.transitions(for: key) {
             transitionsByKey[key] = list
+            #if DEBUG
+            let offered = list
+                .map { "\($0.name)->\($0.to?.name ?? "?")(\($0.to?.id ?? "no id"))" }
+                .joined(separator: ", ")
+            FileHandle.standardError.write(Data("[moves] \(key): \(offered)\n".utf8))
+            #endif
         }
     }
 

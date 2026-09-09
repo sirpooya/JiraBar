@@ -17,6 +17,18 @@ struct PopoverRootView: View {
     @State private var columnGoesForward = true
     /// How far the list is currently dragged, updated as the fingers move.
     @State private var columnDrag: CGFloat = 0
+    /// True for the single frame in which a committed swipe swaps the column.
+    ///
+    /// The swipe has already carried the old list off screen and the placeholder into its place by
+    /// then, so the scope change must land silently. Without this the content transition would run
+    /// a SECOND slide on top of the one the fingers just finished, which is the double movement
+    /// this whole path exists to remove.
+    @State private var isCommittingSwipe = false
+
+    /// The panel's own width, so the column a swipe is heading for can be parked exactly one
+    /// panel away. Measured rather than assumed: 380 in the popover, but the user's own width
+    /// once the panel is detached into a resizable window.
+    @State private var panelWidth: CGFloat = 380
 
     @State private var columnSwipeMonitor: Any?
     @State private var columnSwipe = SwipeTracker()
@@ -48,7 +60,8 @@ struct PopoverRootView: View {
                     if store.isShowingSampleData { sampleDataBanner }
                     header
                     Divider().opacity(0.5)
-                    content
+                    ZStack {
+                        content
                         // Fills the detached window, so the header stays at the top and the footer
                         // at the bottom instead of the whole panel floating in the middle of a
                         // tall window. The list already did this; the loading and empty states
@@ -72,8 +85,28 @@ struct PopoverRootView: View {
                             insertion: .move(edge: columnGoesForward ? .trailing : .leading),
                             removal: .move(edge: columnGoesForward ? .leading : .trailing)
                                 .combined(with: .opacity)))
-                        .animation(reduceMotion ? nil : .snappy(duration: 0.28),
+                        .animation(reduceMotion || isCommittingSwipe
+                                       ? nil : .snappy(duration: 0.28),
                                    value: store.scope?.id)
+                        // Skeleton to real rows is a cross fade in place, never another
+                        // slide: the slide already happened when the column changed. Keyed to the
+                        // loading boundary alone, so a refresh that swaps rows for newer rows
+                        // does not animate and cannot revive the flying-avatars bug above.
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2),
+                                   value: store.state.isLoading)
+                    }
+                    // Measured, so the peek below can be parked exactly one panel away whatever
+                    // width the detached window has been dragged to.
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .onAppear { panelWidth = proxy.size.width }
+                                .onChange(of: proxy.size.width) { _, width in panelWidth = width }
+                        })
+                    // An overlay and not another child of the stack: an overlay is sized to what
+                    // it covers, so a placeholder taller than the real list cannot stretch the
+                    // popover the moment a swipe starts.
+                    .overlay { columnPeek }
                     Divider().opacity(0.5)
                     footer
                 }
@@ -211,10 +244,7 @@ struct PopoverRootView: View {
             columnDrag = liveDrag()
         } else if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
             if let direction = columnSwipe.ended(threshold: Self.columnSwipeThreshold) {
-                // Straight to zero, with no animation of its own: the transition below takes over
-                // from here and carries the list the rest of the way out.
-                columnDrag = 0
-                step(forward: direction == .left)
+                commit(forward: direction == .left)
             } else {
                 // Not far enough. It springs back, which is the gesture being answered with a no.
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { columnDrag = 0 }
@@ -226,6 +256,49 @@ struct PopoverRootView: View {
             if let direction { step(forward: direction == .left) }
         }
         return false
+    }
+
+    /// Finishes a swipe by carrying it the rest of the way, rather than starting a new animation.
+    ///
+    /// The release used to set `columnDrag` back to zero and let the content transition slide the
+    /// list out from there. That is two movements: the list snapped back the 46 points the fingers
+    /// had pulled it, and only then did anything slide, so the new column arrived from nowhere
+    /// instead of from the edge the placeholder had been sitting at.
+    ///
+    /// Here the drag simply continues to a full panel width. The list goes out and the placeholder
+    /// that has been travelling beside it comes in, as one motion at the speed the fingers left
+    /// off. Only when it lands is the column actually swapped, and by then the placeholder is
+    /// already exactly where the new list will be drawn, so the swap itself is invisible.
+    private func commit(forward: Bool) {
+        guard let next = ColumnPaging.column(after: store.scope,
+                                             in: store.columns,
+                                             forward: forward) else {
+            // Nothing to go to. Same answer as a swipe that was too short.
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { columnDrag = 0 }
+            return
+        }
+
+        guard !reduceMotion else {
+            columnDrag = 0
+            select(next)
+            return
+        }
+
+        let duration = 0.26
+        isCommittingSwipe = true
+        withAnimation(.snappy(duration: duration)) {
+            columnDrag = forward ? -panelWidth : panelWidth
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            // Both of these together, and silently: the placeholder is at offset zero by now, and
+            // the list that replaces it is drawn at offset zero too, so nothing moves.
+            columnDrag = 0
+            select(next)
+            // Cleared a turn later, so the scope change above is the one evaluated with the
+            // transition suppressed and the next ordinary column change animates normally.
+            DispatchQueue.main.async { isCommittingSwipe = false }
+        }
     }
 
     private func step(forward: Bool) {
@@ -245,6 +318,41 @@ struct PopoverRootView: View {
                                                    in: store.columns,
                                                    forward: travel < 0) != nil
         return SwipeTracker.rubberBand(travel, limit: hasSomewhereToGo ? 46 : 16)
+    }
+
+    /// The column the swipe is heading for, travelling with the fingers.
+    ///
+    /// Without this a swipe pulled the list aside and uncovered whatever sat behind the panel, so
+    /// the gesture read as tearing the panel loose rather than as moving to the column next to it.
+    /// `liveDrag` rubber bands the list to at most 46 points, so this is a peek at the edge and
+    /// not a page turn.
+    ///
+    /// It is a skeleton because the column it belongs to has genuinely not been asked for yet:
+    /// the fetch starts when the swipe is released. Drawing real rows here would mean fetching
+    /// every neighbour on the chance you might swipe to it.
+    ///
+    /// Nothing here survives the release. `columnDrag` goes back to zero before the scope changes,
+    /// so the peek is gone by the time the transition that replaces the list begins, and the two
+    /// can never be on screen together.
+    @ViewBuilder
+    private var columnPeek: some View {
+        if columnDrag != 0 {
+            // Dragging the list left uncovers the trailing edge, and the column that arrives there
+            // is the next one. Dragging right uncovers the leading edge and the previous one.
+            let forward = columnDrag < 0
+            // Nothing at the ends of the board. `liveDrag` still gives a short rubber band there,
+            // and that resistance against an empty edge is the panel saying there is nowhere left
+            // to go, which a placeholder would flatly contradict.
+            if ColumnPaging.column(after: store.scope,
+                                   in: store.columns,
+                                   forward: forward) != nil {
+                SkeletonListView(rowCount: store.skeletonRowCount, fillsHeight: isDetached)
+                    // Exactly one panel away on the side being uncovered, so it comes in at the
+                    // same rate the list goes out.
+                    .offset(x: columnDrag + (forward ? panelWidth : -panelWidth))
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     /// Used by the swipe and by the dropdown alike, so picking "Done" from the menu travels the
@@ -291,25 +399,34 @@ struct PopoverRootView: View {
                 // Always rendered, invisible at zero, so its slot never changes width.
                 //
                 // Measured 2026-09-09 off a screen recording of a column switch: `scope.didSet`
-                // sets `state = .loading`, `badgeCount` reads zero for the ~150ms the new column
-                // takes to load, and the badge disappeared. Because this control is centred,
-                // losing it narrowed the group and slid the column name 28 points right and then
-                // straight back left, with the chevron going the other way. Two direction changes
-                // in a fifth of a second, for a count that was about to come back.
+                // sets `state = .loading`, the count read zero for the ~150ms the new column took
+                // to load, and the badge disappeared. Because this control is centred, losing it
+                // narrowed the group and slid the column name 28 points right and then straight
+                // back left, with the chevron going the other way.
+                //
+                // Reserving the slot fixed the sliding but not the blink: the capsule itself
+                // still went and came back. So the header reads `displayCount`, which holds the
+                // previous number while a column loads, and the badge now stays put and simply
+                // changes value. `numericText` rolls the digits rather than cutting between them.
                 //
                 // `monospacedDigit` plus the min width hold one and two digit counts to the same
                 // size, so 6 becoming 23 cannot move the name either. Three digits will still
                 // grow it, which is the right trade: a column with a hundred issues is not a
                 // case worth padding every other column for.
-                Text("\(store.badgeCount)")
+                Text("\(store.displayCount)")
                     .font(.system(size: 10, weight: .semibold))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 12)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(Color.primary.opacity(0.08)))
-                    .opacity(store.badgeCount > 0 ? 1 : 0)
+                    // Still hidden when there is genuinely nothing to report, which is a real
+                    // answer and not the transient zero the loading state used to produce.
+                    .opacity(store.displayCount > 0 ? 1 : 0)
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.25),
+                               value: store.displayCount)
 
                 // Hand-drawn, because the system indicator cannot be moved to the far side of the
                 // badge. "chevron.down" is a real symbol name: a misspelled one draws nothing and
@@ -325,8 +442,8 @@ struct PopoverRootView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(store.columns.isEmpty)
-        .help("\(store.badgeCount) issues in this column")
-        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(store.badgeCount) issues. Choose a board column.")
+        .help("\(store.displayCount) issues in this column")
+        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(store.displayCount) issues. Choose a board column.")
     }
 
     // MARK: - Content
@@ -340,10 +457,14 @@ struct PopoverRootView: View {
             NeedsTokenView(onOpenSettings: onOpenSettings)
 
         case .loading:
-            LoadingView()
+            // The shape of the list rather than a spinner on an empty panel, so a column swipe
+            // slides in something with structure and only the content changes when it lands.
+            SkeletonListView(rowCount: store.skeletonRowCount, fillsHeight: isDetached)
+                .transition(.opacity)
 
         case .issues(let issues):
             IssueListView(issues: issues, store: store, fillsHeight: isDetached)
+                .transition(.opacity)
 
         case .empty:
             EmptyIssuesView(onRefresh: onRefresh)

@@ -105,6 +105,14 @@ enum ColumnPaging {
 }
 
 extension BoardColumn {
+    /// The column's own name without the coloured circle the board puts in front of it, for
+    /// comparing against a status name, which carries no emoji.
+    var plainName: String {
+        String(String.UnicodeScalarView(name.unicodeScalars.filter {
+            !$0.properties.isEmojiPresentation
+        })).trimmingCharacters(in: .whitespaces)
+    }
+
     /// The name of the column that gathers a status.
     ///
     /// Used by the move menu, so a destination reads as the column the dropdown calls it: this
@@ -131,10 +139,22 @@ struct MoveOption: Identifiable, Hashable {
     static func options(from transitions: [JiraTransition],
                         columns: [BoardColumn]) -> [MoveOption] {
         transitions.compactMap { transition in
-            guard let name = BoardColumn.name(forStatusID: transition.to?.id, in: columns) else {
-                return nil
-            }
+            guard let name = columnName(for: transition.to, in: columns) else { return nil }
             return MoveOption(transition: transition, columnName: name)
         }
+    }
+
+    /// By status id first, and by status name when the id is absent.
+    ///
+    /// `to.id` is optional in Jira's answer, and matching on it alone dropped every transition
+    /// that arrived without one, which looked exactly like the workflow not offering that move.
+    /// The name comparison ignores the coloured circle in the column's own name.
+    private static func columnName(for target: JiraTransition.Target?,
+                                   in columns: [BoardColumn]) -> String? {
+        if let name = BoardColumn.name(forStatusID: target?.id, in: columns) { return name }
+        guard let status = target?.name?.trimmingCharacters(in: .whitespaces), !status.isEmpty else {
+            return nil
+        }
+        return columns.first { $0.plainName.caseInsensitiveCompare(status) == .orderedSame }?.name
     }
 }

@@ -66,6 +66,9 @@ section when a release is cut.
 - Switching column slides the list the way you swiped, and going back to the list is no longer quicker than going in
 - The list follows your fingers while you swipe between columns, springs back when the swipe is too small, and gives way less at either end of the board
 - Move menus list only the board's columns, so a workflow status the board has no column for is no longer offered
+- Swiping between board columns now slides in a placeholder list that matches the real row layout, and fills in the issues when they arrive, instead of showing a spinner on an empty panel.
+- While swiping between board columns, the next or previous column's placeholder now travels in from the edge with your fingers instead of uncovering empty space.
+- Releasing a column swipe now carries the gesture through in one motion: the current column slides out and the new one slides in from where the placeholder was, instead of snapping back first.
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -95,4 +98,6 @@ section when a release is cut.
 - The detached window fills with the panel instead of leaving it floating in the middle
 - The issue count badge no longer disappears while a column loads, so the column name and chevron stop jumping sideways on every column switch.
 - Opening an issue now always takes the list out towards the leading edge, instead of following whichever direction the last column swipe went.
+- Moves whose destination Jira reports without a status id are offered again, instead of looking like the workflow refused them
+- The issue count badge in the header no longer blinks out and back when switching columns. It stays in place and rolls to the new value.
 

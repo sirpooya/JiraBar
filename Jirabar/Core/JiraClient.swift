@@ -107,6 +107,8 @@ struct JiraClient {
     /// The transitions this issue can take right now, for this user. Always read before writing:
     /// transition ids differ per workflow scheme, so hardcoding one is a bug waiting for the next
     /// project.
+    /// Only what the workflow allows from the issue's current status: Jira decides this, not the
+    /// app, so a move the board offers and this list omits is a workflow question.
     func transitions(for issueKey: String) async throws -> [JiraTransition] {
         let response = try await get("/rest/api/2/issue/\(issueKey)/transitions",
                                      query: ["expand": "transitions.fields"],
