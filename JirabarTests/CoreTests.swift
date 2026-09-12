@@ -467,6 +467,24 @@ final class DecodingTests: XCTestCase {
                        "the workflow's own id still drives the move")
     }
 
+    /// Jira lists a transition back to the current status, and offering it put "Testing" in a
+    /// Testing issue's own move menu, which is not a move at all.
+    func testTheColumnTheIssueIsAlreadyInIsNotOffered() {
+        let columns = [BoardColumn(name: "🔵 Testing", statusIDs: ["10005", "10006"]),
+                       BoardColumn(name: "🟢 Done", statusIDs: ["10007"])]
+        let json = """
+        {"transitions":[{"id":"51","name":"Test","to":{"id":"10005","name":"Testing"}},
+                        {"id":"52","name":"Retest","to":{"id":"10006","name":"In Test"}},
+                        {"id":"53","name":"Finish","to":{"id":"10007","name":"Done"}}]}
+        """.data(using: .utf8)!
+        let transitions = try! JSONDecoder().decode(JiraTransitionsResponse.self, from: json).transitions
+        let here = JiraIssue.NamedRef(id: "10005", name: "Testing", statusCategory: nil, iconUrl: nil)
+        let offered = MoveOption.options(from: transitions, columns: columns, currentStatus: here)
+
+        XCTAssertEqual(offered.map(\.columnName), ["🟢 Done"],
+                       "both statuses the Testing column gathers are where the issue already is")
+    }
+
     /// `to.id` is optional in Jira's answer, and matching on it alone dropped those transitions
     /// entirely, which looked like the workflow refusing the move.
     func testAMoveIsMatchedByStatusNameWhenNoIdCameWithIt() {

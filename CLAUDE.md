@@ -23,10 +23,15 @@ Keep it minimal and dependency-light. No cloud sync, no accounts, no analytics.
 - 2026-09-09 The menu bar icon is that mark, from the `logo.png` the user supplied, bundled as
   `Jirabar/Resources/MenuBarIcon.png` and cropped to its ink at load. The app icon is
   `Jirabar/Resources/AppIcon.icon`, an Icon Composer bundle, which needs Xcode 26 to compile.
-- GitHub repo: `jira-ticketbar`. The local folder is `osx-jira-ticketbar`, matching the house
-  `osx-*` convention and the existing Claude session path. Neither was renamed with the app,
-  because the folder path is this project's Claude session key; use the `rename-project` skill if
-  you ever want them to match.
+- 2026-09-09 The local folder is `osx-jirabar`, renamed from `osx-jira-ticketbar` with the
+  `rename-project` skill, which is what a folder rename here needs: the absolute path is this
+  project's Claude session key, so the skill moved the folder and then migrated the session
+  history, the memory directory and the `~/.claude.json` entry to the new key. Renaming the
+  folder by hand would have orphaned every past conversation. The house `osx-*` convention holds
+  either way.
+- GitHub repo is still `osx-jira-ticketbar`, so the remote URL no longer matches the folder. Git
+  does not care and nothing is broken; the repo has to be renamed on GitHub, then `git remote
+  set-url`, if you want the two to agree.
 - Bundle id `in.pooya.ticketbar`, Debug `in.pooya.ticketbar.debug`. `PRODUCT_NAME` is `Jirabar`,
   so the artifact is `Jirabar.app`.
 

@@ -130,16 +130,27 @@ extension BoardColumn {
 /// Only moves that land in a column are offered. A workflow can transition an issue into a status
 /// no column gathers, "Blocked" on this board, and showing that meant the menu listed a
 /// destination the board has no place for, under a name that appears nowhere else in the app.
+///
+/// A move into the column the issue is already in is not offered either. Jira lists a transition
+/// back to the current status, so a Testing issue's menu had "Testing" in it, which is not a move
+/// and reads as a mistake. The comparison is by column and not by status, because one column can
+/// gather several statuses: a hop between two statuses the same column gathers leaves the issue
+/// exactly where the board already shows it.
 struct MoveOption: Identifiable, Hashable {
     let transition: JiraTransition
     let columnName: String
 
     var id: String { transition.id }
 
+    /// - Parameter currentStatus: the issue's status right now, whose column is excluded from the
+    ///   result. Pass nil only when the status is genuinely unknown.
     static func options(from transitions: [JiraTransition],
-                        columns: [BoardColumn]) -> [MoveOption] {
-        transitions.compactMap { transition in
+                        columns: [BoardColumn],
+                        currentStatus: JiraIssue.NamedRef? = nil) -> [MoveOption] {
+        let here = currentStatus.flatMap { columnName(for: $0.id, name: $0.name, in: columns) }
+        return transitions.compactMap { transition in
             guard let name = columnName(for: transition.to, in: columns) else { return nil }
+            guard name != here else { return nil }
             return MoveOption(transition: transition, columnName: name)
         }
     }
@@ -151,8 +162,14 @@ struct MoveOption: Identifiable, Hashable {
     /// The name comparison ignores the coloured circle in the column's own name.
     private static func columnName(for target: JiraTransition.Target?,
                                    in columns: [BoardColumn]) -> String? {
-        if let name = BoardColumn.name(forStatusID: target?.id, in: columns) { return name }
-        guard let status = target?.name?.trimmingCharacters(in: .whitespaces), !status.isEmpty else {
+        columnName(for: target?.id, name: target?.name, in: columns)
+    }
+
+    private static func columnName(for id: String?,
+                                   name: String?,
+                                   in columns: [BoardColumn]) -> String? {
+        if let column = BoardColumn.name(forStatusID: id, in: columns) { return column }
+        guard let status = name?.trimmingCharacters(in: .whitespaces), !status.isEmpty else {
             return nil
         }
         return columns.first { $0.plainName.caseInsensitiveCompare(status) == .orderedSame }?.name

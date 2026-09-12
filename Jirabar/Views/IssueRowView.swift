@@ -80,7 +80,8 @@ struct IssueRowView: View {
         // pointer. A right-click and then a choice from a menu is two deliberate acts.
         .contextMenu {
             let moves = MoveOption.options(from: store.transitionsByKey[issue.key] ?? [],
-                                           columns: store.columns)
+                                           columns: store.columns,
+                                           currentStatus: issue.fields.status)
             if moves.isEmpty {
                 // The menu's contents are built when it opens, so a hover that has not finished
                 // loading yet says so rather than showing an empty menu.

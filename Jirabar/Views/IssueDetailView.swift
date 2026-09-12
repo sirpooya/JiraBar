@@ -381,7 +381,9 @@ struct IssueDetailView: View {
 
     /// Only the moves that land in one of this board's columns. See `MoveOption`.
     private var moveOptions: [MoveOption] {
-        MoveOption.options(from: transitions, columns: store.columns)
+        MoveOption.options(from: transitions,
+                           columns: store.columns,
+                           currentStatus: issue.fields.status)
     }
 
     /// A destination reads as the board column it lands in, named exactly as Jira names it.
