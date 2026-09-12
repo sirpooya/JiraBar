@@ -10,7 +10,14 @@ struct PopoverRootView: View {
     let onToggleDetach: () -> Void
     let isDetached: Bool
 
+    /// The popover's fixed width. A popover has no frame of its own, so this is the panel.
     private static let width: CGFloat = 380
+
+    /// The floor the panel still lays out at, which is only reachable in the detached window: the
+    /// popover stays at `width`. 320 rather than 380 at the user's request, 2026-09-12. Below this
+    /// the header's three trailing buttons meet the centred column menu and the row chips stop
+    /// wrapping into anything readable.
+    static let minimumWidth: CGFloat = 320
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Which way the next column change travels, so the list leaves the way the swipe went.
@@ -127,11 +134,11 @@ struct PopoverRootView: View {
         // so the width is pinned and the scroll areas are capped.
         //
         // In the detached window it is the other way round. The window's size is the user's, and
-        // the panel fills it in both directions, with 380 as the floor. Pinned to 380 the panel
+        // the panel fills it in both directions, with `minimumWidth` as the floor. Pinned to 380 the panel
         // sat in a window dragged out to 572 with a wide empty margin beside it, and navigating
         // between the list and an issue changed nothing about the window, only what was stranded
         // inside it.
-        .frame(minWidth: Self.width,
+        .frame(minWidth: isDetached ? Self.minimumWidth : Self.width,
                maxWidth: isDetached ? .infinity : Self.width,
                maxHeight: isDetached ? .infinity : nil)
         .onAppear { installColumnSwipe() }
@@ -417,7 +424,8 @@ struct PopoverRootView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
 
-                // Always rendered, invisible at zero, so its slot never changes width.
+                // Rendered only when there is something to count, so an empty column leaves no
+                // gap between the column name and the chevron.
                 //
                 // Measured 2026-09-09 off a screen recording of a column switch: `scope.didSet`
                 // sets `state = .loading`, the count read zero for the ~150ms the new column took
@@ -434,20 +442,18 @@ struct PopoverRootView: View {
                 // size, so 6 becoming 23 cannot move the name either. Three digits will still
                 // grow it, which is the right trade: a column with a hundred issues is not a
                 // case worth padding every other column for.
-                Text("\(store.displayCount)")
-                    .font(.system(size: 10, weight: .semibold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 12)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-                    // Still hidden when there is genuinely nothing to report, which is a real
-                    // answer and not the transient zero the loading state used to produce.
-                    .opacity(store.displayCount > 0 ? 1 : 0)
-                    .animation(reduceMotion ? nil : .snappy(duration: 0.25),
-                               value: store.displayCount)
+                if store.displayCount > 0 {
+                    Text("\(store.displayCount)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 12)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .transition(.identity)
+                }
 
                 // Hand-drawn, because the system indicator cannot be moved to the far side of the
                 // badge. "chevron.down" is a real symbol name: a misspelled one draws nothing and
@@ -463,8 +469,18 @@ struct PopoverRootView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(store.columns.isEmpty)
-        .help("\(store.displayCount) issues in this column")
-        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(store.displayCount) issues. Choose a board column.")
+        .help(countPhrase)
+        .accessibilityLabel("Showing \(store.scope?.name ?? "no column yet"), \(countPhrase). Choose a board column.")
+    }
+
+    /// Reads the same in the tooltip and in VoiceOver, and never says "0 issues in this column"
+    /// where the badge itself has already gone.
+    private var countPhrase: String {
+        switch store.displayCount {
+        case 0: return "No issues in this column"
+        case 1: return "1 issue in this column"
+        case let n: return "\(n) issues in this column"
+        }
     }
 
     // MARK: - Content

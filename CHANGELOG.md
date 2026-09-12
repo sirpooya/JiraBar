@@ -74,6 +74,7 @@ section when a release is cut.
 - Every field value under the header reads as a badge, story points included, not only the tag lists
 - Components, labels, story points and the parent story join the badges under the title instead of sitting in a table below them
 - The story points badge reads "4 SP" rather than a bare number
+- The detached window can now be resized down to 320 points wide, from 380.
 
 ### Removed
 - The one-click Done button on list rows; moving an issue now happens in the detail view
@@ -108,4 +109,5 @@ section when a release is cut.
 - The header no longer grows by a fraction of a point while a refresh is in flight, which was nudging the divider and the whole list down and back.
 - Cmd+V, Cmd+C, Cmd+X, Cmd+A and undo now work with a non-Latin keyboard layout selected. They matched the letter printed on the key, so switching to Persian to write a comment silently broke pasting an image.
 - The add-a-reaction control is hidden on a Jira that has no reactions API, instead of failing with "Not found on this server" every time
+- The issue count badge no longer reserves empty space beside the column name when a column has no issues.
 

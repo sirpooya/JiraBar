@@ -15,8 +15,14 @@ import SwiftUI
 final class DetachedWindow: NSObject, NSWindowDelegate {
     static let shared = DetachedWindow()
 
-    /// Matches the panel's own minimum width in `PopoverRootView`.
-    private static let width: CGFloat = 380
+    /// Matches the panel's own minimum width in `PopoverRootView`, read from there rather than
+    /// restated, because a window that can be dragged narrower than the panel lays out at clips
+    /// the panel instead of reflowing it.
+    private static var width: CGFloat { PopoverRootView.minimumWidth }
+
+    /// What a freshly torn-off window opens at, which is the popover's width and not the floor:
+    /// detaching should hand you the panel you were already reading, not the narrowest one.
+    private static let defaultWidth: CGFloat = 380
     private static let minHeight: CGFloat = 260
 
     private var window: NSWindow?
@@ -49,12 +55,12 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         window.title = "Jirabar"
         // Resizable, because nothing sizes it to its content any more: the height is the user's.
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
-        // 380 is the floor, not the ceiling: the panel fills this window now, so dragging it
+        // `width` is the floor, not the ceiling: the panel fills this window now, so dragging it
         // wider gives the comment thread more room instead of adding empty margin. A saved frame
         // wider than the old fixed width restores intact rather than being clamped back.
         window.contentMinSize = NSSize(width: Self.width, height: Self.minHeight)
         window.contentMaxSize = NSSize(width: 1200, height: 2000)
-        window.setContentSize(NSSize(width: Self.width, height: 520))
+        window.setContentSize(NSSize(width: Self.defaultWidth, height: 520))
         window.titlebarAppearsTransparent = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
@@ -77,7 +83,7 @@ final class DetachedWindow: NSObject, NSWindowDelegate {
         window?.close()
     }
 
-    /// The panel does not reflow below 380 points, it clips, so the window must not go there.
+    /// The panel does not reflow below `width` points, it clips, so the window must not go there.
     ///
     /// `contentMinSize` alone did not hold it: with `sizingOptions` empty the content imposes no
     /// constraints of its own, and the drag went straight past the minimum. This is the hook AppKit
